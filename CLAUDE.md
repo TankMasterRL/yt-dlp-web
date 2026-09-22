@@ -15,11 +15,46 @@ yt-dlp-web runs the **unmodified** [yt-dlp](https://github.com/yt-dlp/yt-dlp) Py
 - CI runs the suite inside `Dockerfile.test` (official Playwright base image, with the Bun binary copied in from `oven/bun`). **Its tag must match the `@playwright/test` version in `bun.lock`** — bump them together.
 - Version ceilings that are not accidents: **TypeScript 6** (SvelteKit and svelte-check do not accept 7 yet) and **Vitest 4**.
 
+## Architecture: the pipeline
+
+yt-dlp runs **unmodified** in Pyodide; everything browser-specific plugs into its own plugin seams.
+
+```
+URL input → ExtractSession (runes)                     src/routes/+page.svelte, src/lib/engine/session.svelte.ts
+  → engine worker: Pyodide + yt-dlp                    src/workers/engine.worker.ts, src/lib/engine/{client,runtime}.ts
+      boot: pinned wheels, SHA-256 checked, unpacked   src/lib/engine/wheels.ts (pins), runtime.ts (bootEngine)
+      bootstrap: yt-dlp's handlers → RelayRH           src/python/ytdlp_web/{bootstrap,relay_rh,transport}.py
+      RelayRH → SyncTransport (sync XHR)               src/lib/relay/client.ts (createSyncTransport)
+      extract_info(download=False) → JSON + live log   src/python/ytdlp_web/api.py
+  → format table (muxed first)                         src/lib/ui/FormatTable.svelte, src/lib/formats.ts
+
+Relay Worker (no secrets, no storage, no parsing)      worker/src/
+  /relay  one browser request → one upstream request   relay.ts (handler), policy.ts (SSRF guard), config.ts (env)
+  e2e: the same handler, fake site upstream            scripts/fixture-relay.ts, tests/fixtures/site.ts
+```
+
+**Every I/O dependency is an injected seam** with a browser default: the Python transport (`bootstrap.install(transport)`), the relay's upstream fetch and rate limiter (`RelayDeps`), the session's engine factory (`SpawnEngine`), `XMLHttpRequest`/`fetch` in the relay clients. Tests pass fakes — see `session.svelte.test.ts` and `relay.test.ts` for the pattern.
+
+### The relay protocol (shared seam — keep both ends in step)
+
+Defined once in `src/lib/relay/protocol.ts`, used by the Worker and both browser clients. The upstream URL travels in `X-Relay-Url` (a header, so the relay URL is constant and CORS preflights stay cached); upstream request headers — including ones XHR may not set (Cookie, Referer, Origin, User-Agent) — travel as JSON in `X-Relay-Headers`; the response carries `X-Relay-Status` and the upstream headers as JSON, Set-Cookie included (JS can never read a real one). A response **without** `X-Relay-Status` is the relay refusing (see `X-Relay-Error`), not the upstream answering.
+
+### The worker pattern (keep the protocols mirrored)
+
+Every worker speaks `src/lib/workers/protocol.ts` (the LiveTranslate-WebGPU shape): `load` / work message with `id` / `progress` / `ready` / `result` / `error`. Clients match results to promises by id. **Load failures must reject the pending `load()` promise** (an `error` message with no `id`), and `terminate()` must reject calls still waiting for load. Workers are created from `?worker&url` imports passed through the `yt-dlp-web-worker-url` Trusted Types policy (`src/lib/trusted-types.ts`: same-origin http(s) only).
+
+### Reactivity model
+
+Svelte 5 runes classes live in `.svelte.ts` files (`ExtractSession`) exposing `$state` fields; they are unit-testable in Vitest directly. Components use `$props()`/`$derived`.
+
 ## Hard constraints (these explain non-obvious code)
 
 - **The Worker is mandatory.** youtube.com sends no `Access-Control-Allow-Origin` for arbitrary origins, so a page cannot fetch a watch page or player JS directly. Don't try to "remove the proxy". The Worker holds no secrets, stores nothing and parses nothing.
-- **Pyodide's `ssl` module is a stub** (importable; real TLS raises `NotImplementedError`). yt-dlp's built-in request handlers must be removed from `yt_dlp.networking.common._REQUEST_HANDLERS` before a `YoutubeDL` is constructed, otherwise the urllib handler raises while building an `SSLContext`.
+- **Pyodide has no sockets and its `ssl` module is a stub** (an `SSLContext` builds, but every handshake fails with `TLS not supported in this environment`). `bootstrap.install()` clears `yt_dlp.networking.common._REQUEST_HANDLERS` and registers `RelayRH` before any `YoutubeDL` exists.
 - **Python-side I/O is synchronous `XMLHttpRequest`, which is only legal inside a Worker** (`responseType = 'arraybuffer'` on a sync XHR throws on the main thread). Pyodide never runs on the main thread.
+- **The relay never follows redirects.** A browser would follow a real 3xx itself, straight into a CORS failure, so the relay returns redirects as data and `RelayRH` follows them hop by hop with yt-dlp's own redirect rules and cookie jar. Every hop is a new relay request and passes the allowlist again. Don't "optimise" this into server-side redirect following.
+- **Bodies reaching Python are capped at 32 MiB** (`X-Relay-Max-Bytes`). An extractor that needs bytes beyond the cut fails loudly (`_Body` in `relay_rh.py`) instead of reading a silently truncated page. Bulk media never goes through Python.
+- **Pyodide + yt-dlp need no `unsafe-eval`** — verified in e2e: the engine worker runs under a header CSP of `script-src 'self' 'wasm-unsafe-eval'` with `require-trusted-types-for 'script'; trusted-types 'none'`. Keep it that way.
 - **Untrusted JavaScript never runs in the app's origin.** YouTube's player JS is evaluated only inside `/solve`'s `worker_loader` isolate, created with `globalOutbound: null` (all `fetch()`/`connect()` throw) and no bindings. `/solve` receives the player source from the browser and performs no network I/O itself.
 - **yt-dlp's `JsRuntime` layer (Deno/Node/QuickJS subprocesses) is unusable** — there is no subprocess in Pyodide. The JS-challenge provider reuses the marshalling of `yt_dlp/extractor/youtube/jsc/_builtin/ejs.py` and only swaps the transport (subprocess → HTTP `/solve`).
 - **No micropip, no CDN, no PyPI at runtime.** yt-dlp has zero required dependencies, so its pinned wheels are installed with `pyodide.unpackArchive(buffer, 'wheel')` from same-origin files. Wheels and the Pyodide distribution are build artifacts — never committed.
@@ -31,6 +66,11 @@ yt-dlp-web runs the **unmodified** [yt-dlp](https://github.com/yt-dlp/yt-dlp) Py
 - **Red/green TDD**: write the failing test first, then the code that turns it green. Commits land green — the branch must stay bisectable.
 - **Every I/O dependency is an injected seam** (the Python request transport, the solver transport, the worker clients, storage). Tests drive them with fakes; new integrations get a seam + a fake, not a mock of a browser API.
 - **Hermetic by default.** CI never touches YouTube or a deployed Worker; tests that do are tagged `@live`, excluded from the default run, and self-skip when the network is unavailable.
+- E2e determinism: Playwright starts `scripts/fixture-relay.ts` — the **real** relay handler with the fake site in `tests/fixtures/site.ts` as upstream — and builds the app with `VITE_RELAY_URL` pointing at it, so e2e exercises sync XHR, CORS preflights and the relay's policy for real. Don't stub the relay with `page.route`.
+- **CSP is a test gate**: e2e fails on any CSP / Trusted Types violation (`tests/e2e/csp.ts`, plus console capture for workers). `vite preview` sends worker scripts the header CSP from `csp.config.js`, the single source of the policy.
+- Tests that don't touch the DOM run under `// @vitest-environment node`: jsdom and Node typed arrays come from different realms and never compare equal.
+- **Never hardcode root-relative asset URLs** — subpath deploys (`BASE_PATH` env → `kit.paths.base`) break them. Resolve `base` at the call site in browser-only code (`+page.svelte`) and hand workers absolute URLs in their `load` message; workers must not import `$app/paths`.
+- Build-time env: `BASE_PATH` (subpath hosting) and `VITE_RELAY_URL` (the relay Worker's origin — also the only extra origin in CSP `connect-src`; unset means same-origin, all-in-one).
 
 ## Branching & commit conventions
 

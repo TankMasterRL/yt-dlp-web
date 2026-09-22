@@ -60,10 +60,19 @@ export type ExtractResult =
 	| { ok: true; info: VideoInfo; warnings: string[] }
 	| { ok: false; error: string; warnings: string[] };
 
+export type LogLevel = 'info' | 'warning' | 'error';
+
 export interface Engine {
 	pyodide: PyodideInterface;
-	/** Synchronous: blocks the calling (worker) thread while yt-dlp runs. */
-	extract(url: string, options?: Record<string, unknown>): ExtractResult;
+	/**
+	 * Synchronous: blocks the calling (worker) thread while yt-dlp runs.
+	 * `onLog` receives yt-dlp's progress lines as they happen.
+	 */
+	extract(
+		url: string,
+		options?: Record<string, unknown>,
+		onLog?: (level: LogLevel, line: string) => void
+	): ExtractResult;
 }
 
 export async function bootEngine(options: BootOptions): Promise<Engine> {
@@ -94,8 +103,8 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
 	onProgress('ready');
 	return {
 		pyodide,
-		extract(url, extractOptions = {}) {
-			return JSON.parse(api.extract(url, JSON.stringify(extractOptions))) as ExtractResult;
+		extract(url, extractOptions = {}, onLog) {
+			return JSON.parse(api.extract(url, JSON.stringify(extractOptions), onLog)) as ExtractResult;
 		}
 	};
 }

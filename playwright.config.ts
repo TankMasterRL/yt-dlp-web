@@ -34,10 +34,19 @@ export default defineConfig({
 		trace: 'on-first-retry'
 	},
 	projects,
-	webServer: {
-		command: 'bun run build && bun run preview --port 4173 --strictPort',
-		port: 4173,
-		reuseExistingServer: !process.env.CI,
-		timeout: 180_000
-	}
+	webServer: [
+		// The real relay handler with a fake video site as its upstream.
+		{
+			command: 'bun scripts/fixture-relay.ts',
+			port: 4174,
+			reuseExistingServer: !process.env.CI
+		},
+		{
+			command: 'bun run build && bun run preview --port 4173 --strictPort',
+			port: 4173,
+			env: { VITE_RELAY_URL: 'http://localhost:4174' },
+			reuseExistingServer: !process.env.CI,
+			timeout: 180_000
+		}
+	]
 });

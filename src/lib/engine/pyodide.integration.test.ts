@@ -161,6 +161,20 @@ str(keys)`);
 		expect(cookie).not.toContain('session=www-only');
 	});
 
+	it("streams yt-dlp's progress lines to a callback while it works", () => {
+		const lines: [string, string][] = [];
+		const result = engine.extract('https://www.fixtures.test/watch', {}, (level, line) =>
+			lines.push([level, line])
+		);
+		expect(result.ok).toBe(true);
+		expect(lines).toContainEqual(['info', expect.stringMatching(/^\[generic\] watch: /)]);
+		expect(lines.some(([, line]) => line.startsWith('[debug]'))).toBe(false);
+		expect(lines).toContainEqual([
+			'warning',
+			expect.stringMatching(/Falling back on generic information extractor/)
+		]);
+	});
+
 	it('sniffs a truncated media body without needing the rest', () => {
 		const result = engine.extract('https://media.fixtures.test/huge.mp4');
 		expect(result.ok).toBe(true);
