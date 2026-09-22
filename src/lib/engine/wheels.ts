@@ -44,14 +44,17 @@ export const WHEELS: readonly WheelPin[] = [
 	}
 ];
 
+/** Raw bytes, typed without DOM-only names so Bun scripts and Workers can import this module. */
+export type Bytes = ArrayBuffer | Uint8Array<ArrayBuffer>;
+
 /** Lowercase hex SHA-256 of `bytes`, via WebCrypto (browser, Worker, Bun, Node). */
-export async function sha256Hex(bytes: BufferSource): Promise<string> {
+export async function sha256Hex(bytes: Bytes): Promise<string> {
 	const digest = await crypto.subtle.digest('SHA-256', bytes);
 	return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Throws unless `bytes` hash to the pinned SHA-256 of `pin`. */
-export async function assertWheelIntegrity(pin: WheelPin, bytes: BufferSource): Promise<void> {
+export async function assertWheelIntegrity(pin: WheelPin, bytes: Bytes): Promise<void> {
 	const actual = await sha256Hex(bytes);
 	if (actual !== pin.sha256) {
 		throw new Error(

@@ -12,7 +12,7 @@
     "dev": "bun run assets && vite dev",
     "build": "bun run assets && vite build",
     "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc -p worker/tsconfig.json && tsc -p scripts/tsconfig.json",
     "test": "vitest run",
     "test:unit": "vitest",
     "test:e2e": "playwright test",
@@ -20,17 +20,21 @@
     "test:docker": "docker build -f Dockerfile.test -t yt-dlp-web-tests . && docker run --rm --ipc=host yt-dlp-web-tests",
     "fetch:wheels": "bun scripts/fetch-wheels.ts",
     "update:ytdlp": "bun scripts/update-ytdlp.ts",
+    "worker:dev": "wrangler dev --config worker/wrangler.jsonc",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.jsonc",
     "screenshot": "bun run build && bun scripts/readme-screenshot.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260922.1",
     "@playwright/test": "1.61.1",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.4.2",
+    "@types/bun": "^1.4.2",
     "@types/node": "^22.20.4",
     "jsdom": "^29.1.1",
     "prettier": "^3.9.8",
@@ -39,7 +43,8 @@
     "svelte-check": "^4.7.6",
     "typescript": "^6.0.3",
     "vite": "^8.3.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.136.3"
   },
   "dependencies": {
     "pyodide": "314.0.7"

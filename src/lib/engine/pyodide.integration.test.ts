@@ -97,7 +97,7 @@ describe.skipIf(!wheelsPresent)('yt-dlp in Pyodide (real runtime, real pinned wh
 
 	it('fetched wheels match their pins', async () => {
 		for (const pin of WHEELS) {
-			expect(await sha256Hex(await readFile(join(cacheDir, pin.file)))).toBe(pin.sha256);
+			expect(await sha256Hex(new Uint8Array(await readFile(join(cacheDir, pin.file))))).toBe(pin.sha256);
 		}
 	});
 
