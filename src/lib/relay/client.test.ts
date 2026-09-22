@@ -1,7 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import type { TransportRequest } from '$lib/engine/transport';
-import { RelayError, createSyncTransport, relayEndpoint, relayFetch } from './client';
+import {
+	RelayError,
+	createSyncSolver,
+	createSyncTransport,
+	probeSolver,
+	relayEndpoint,
+	relayFetch,
+	solveEndpoint
+} from './client';
 import { RelayHeader, decodeHeaderList, encodeHeaderJson } from './protocol';
 
 /** A scriptable stand-in for XMLHttpRequest, recording what the transport did. */
@@ -17,6 +25,7 @@ class FakeXhr {
 	sent: unknown;
 	status = 0;
 	response: ArrayBuffer | null = null;
+	responseText = '';
 	responseHeaders: Record<string, string> = {};
 	constructor() {
 		FakeXhr.instances.push(this);
@@ -166,5 +175,44 @@ describe('relayFetch (download worker)', () => {
 		await expect(relayFetch('/relay', { url: 'https://x.googlevideo.com/' }, fetchImpl)).rejects.toThrow(
 			/rate limit/
 		);
+	});
+});
+
+describe('solver client (engine worker)', () => {
+	it('POSTs the program synchronously, marked so the Worker demands a preflight', () => {
+		const { Xhr, instances } = fakeXhr((xhr) => {
+			xhr.status = 200;
+			xhr.responseText = '{"type":"result","responses":[]}';
+		});
+		const output = createSyncSolver('https://relay.example/solve', Xhr)('console.log(1)');
+		const xhr = instances[0];
+		expect(xhr).toMatchObject({ method: 'POST', url: 'https://relay.example/solve', async: false });
+		expect(xhr.requestHeaders[RelayHeader.solve]).toBe('1');
+		expect(xhr.sent).toBe('console.log(1)');
+		expect(output).toBe('{"type":"result","responses":[]}');
+	});
+
+	it('throws RelayError when the program fails or the Worker cannot solve', () => {
+		const { Xhr } = fakeXhr((xhr) => {
+			xhr.status = 422;
+			xhr.responseHeaders = { [RelayHeader.error]: 'solver program failed: unexpected structure' };
+		});
+		expect(() => createSyncSolver('/solve', Xhr)('x')).toThrow(/unexpected structure/);
+	});
+
+	it('probes availability without solving anything', async () => {
+		const status = (code: number) => async () => new Response(null, { status: code });
+		expect(await probeSolver('/solve', status(204))).toBe(true);
+		expect(await probeSolver('/solve', status(501))).toBe(false);
+		expect(
+			await probeSolver('/solve', async () => {
+				throw new TypeError('Failed to fetch');
+			})
+		).toBe(false);
+	});
+
+	it('derives the endpoint from the relay URL', () => {
+		expect(solveEndpoint(undefined)).toBe('/solve');
+		expect(solveEndpoint('https://w.example.workers.dev')).toBe('https://w.example.workers.dev/solve');
 	});
 });

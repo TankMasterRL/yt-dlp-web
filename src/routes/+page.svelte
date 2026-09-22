@@ -6,13 +6,15 @@
 	import { ExtractSession } from '$lib/engine/session.svelte';
 	import { WHEELS } from '$lib/engine/wheels';
 	import { formatDuration, primaryVideo } from '$lib/formats';
-	import { relayEndpoint } from '$lib/relay/client';
+	import { relayEndpoint, solveEndpoint } from '$lib/relay/client';
 	import FormatTable from '$lib/ui/FormatTable.svelte';
 
 	// Resolved here, in browser-only code: workers get absolute URLs in `load`.
+	const relayUrl = import.meta.env.VITE_RELAY_URL;
 	const session = new ExtractSession(spawnEngine, {
 		assetsBase: new URL(`${base}/`, location.href).href,
-		relayEndpoint: new URL(relayEndpoint(import.meta.env.VITE_RELAY_URL), location.href).href
+		relayEndpoint: new URL(relayEndpoint(relayUrl), location.href).href,
+		solveEndpoint: new URL(solveEndpoint(relayUrl), location.href).href
 	});
 
 	onMount(() => {
@@ -85,6 +87,12 @@
 >
 	{engineStatus}
 </p>
+{#if session.solverAvailable === false}
+	<p class="status note" data-solver="unavailable">
+		This relay cannot solve YouTube's JavaScript challenges (it needs a Worker Loader binding), so
+		yt-dlp uses YouTube clients that don't need them — some formats may be missing.
+	</p>
+{/if}
 
 {#if session.log.length}
 	<details class="log" open={session.busy}>
@@ -161,6 +169,11 @@
 	.status.failed,
 	.error {
 		color: var(--danger);
+	}
+
+	.status.note {
+		color: var(--warn);
+		max-width: 46rem;
 	}
 
 	.log {

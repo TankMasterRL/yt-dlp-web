@@ -10,6 +10,14 @@ import {
 	encodeHeaderJson,
 	type HeaderList
 } from '../../src/lib/relay/protocol';
+import {
+	INERT_RESPONSE_HEADERS,
+	clientKey,
+	gateOrigin,
+	plainError,
+	preflight,
+	readCapped
+} from './http';
 import { checkTarget, type HostPattern } from './policy';
 
 export interface RelayConfig {
@@ -31,8 +39,6 @@ export interface RelayDeps {
 }
 
 const METHODS = new Set(['GET', 'HEAD', 'POST']);
-/** Chrome caps preflight caching at two hours. */
-const PREFLIGHT_MAX_AGE = 7200;
 const ALLOW_HEADERS = [RelayHeader.url, RelayHeader.headers, RelayHeader.maxBytes, 'Content-Type'];
 const EXPOSE_HEADERS = [RelayHeader.status, RelayHeader.headers, RelayHeader.truncated, RelayHeader.error];
 
@@ -67,49 +73,17 @@ const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
 /** Browser navigations and embeds can never be relay requests. */
 const DOCUMENT_DESTINATIONS = new Set(['document', 'iframe', 'frame', 'embed', 'object']);
 
-/** Headers that make any relay response inert if a browser ever renders it. */
-const INERT_RESPONSE_HEADERS = {
-	'Content-Type': 'application/octet-stream',
-	'Content-Security-Policy': "sandbox; default-src 'none'",
-	'X-Content-Type-Options': 'nosniff',
-	'Content-Disposition': 'attachment',
-	'Cache-Control': 'no-store',
-	'Referrer-Policy': 'no-referrer',
-	'Cross-Origin-Resource-Policy': 'cross-origin'
-};
-
 export async function handleRelay(
 	request: Request,
 	config: RelayConfig,
 	deps: RelayDeps
 ): Promise<Response> {
-	const origin = request.headers.get('Origin');
-	const selfOrigin = new URL(request.url).origin;
-	const crossOrigin = origin !== null && origin !== selfOrigin;
-	if (crossOrigin && !config.allowedOrigins.has(origin)) {
-		return plainError(403, 'origin not allowed');
-	}
-	const cors: Record<string, string> = crossOrigin
-		? {
-				'Access-Control-Allow-Origin': origin,
-				'Access-Control-Expose-Headers': EXPOSE_HEADERS.join(', '),
-				Vary: 'Origin'
-			}
-		: { Vary: 'Origin' };
+	const gate = gateOrigin(request, config.allowedOrigins, EXPOSE_HEADERS);
+	if (!gate.ok) return gate.response;
+	const { cors } = gate;
 	const fail = (status: number, reason: string) => plainError(status, reason, cors);
 
-	if (request.method === 'OPTIONS') {
-		if (!crossOrigin) return fail(400, 'not a CORS preflight');
-		return new Response(null, {
-			status: 204,
-			headers: {
-				...cors,
-				'Access-Control-Allow-Methods': [...METHODS].join(', '),
-				'Access-Control-Allow-Headers': ALLOW_HEADERS.join(', '),
-				'Access-Control-Max-Age': String(PREFLIGHT_MAX_AGE)
-			}
-		});
-	}
+	if (request.method === 'OPTIONS') return preflight(gate, [...METHODS], ALLOW_HEADERS);
 	if (!METHODS.has(request.method)) return fail(405, `method ${request.method} not relayed`);
 
 	if (
@@ -124,9 +98,8 @@ export async function handleRelay(
 	const check = checkTarget(target, config.allowedHosts);
 	if (!check.ok) return fail(403, check.reason);
 
-	if (deps.limiter) {
-		const key = request.headers.get('CF-Connecting-IP') ?? 'local';
-		if (!(await deps.limiter.limit({ key })).success) return fail(429, 'rate limit exceeded');
+	if (deps.limiter && !(await deps.limiter.limit({ key: clientKey(request) })).success) {
+		return fail(429, 'rate limit exceeded');
 	}
 
 	let tunnelled: HeaderList;
@@ -193,47 +166,4 @@ function tunnelResponseHeaders(source: Headers): HeaderList {
 	}
 	for (const cookie of source.getSetCookie()) list.push(['set-cookie', cookie]);
 	return list;
-}
-
-async function readCapped(
-	stream: ReadableStream<Uint8Array> | null,
-	cap: number
-): Promise<{ bytes: Uint8Array; truncated: boolean }> {
-	if (!stream) return { bytes: new Uint8Array(), truncated: false };
-	const reader = stream.getReader();
-	const chunks: Uint8Array[] = [];
-	let total = 0;
-	let truncated = false;
-	for (;;) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		if (total + value.byteLength > cap) {
-			chunks.push(value.subarray(0, cap - total));
-			total = cap;
-			truncated = true;
-			await reader.cancel();
-			break;
-		}
-		chunks.push(value);
-		total += value.byteLength;
-	}
-	const bytes = new Uint8Array(total);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return { bytes, truncated };
-}
-
-function plainError(status: number, reason: string, extra: Record<string, string> = {}): Response {
-	return new Response(reason, {
-		status,
-		headers: {
-			...INERT_RESPONSE_HEADERS,
-			'Content-Type': 'text/plain; charset=utf-8',
-			...extra,
-			[RelayHeader.error]: reason
-		}
-	});
 }

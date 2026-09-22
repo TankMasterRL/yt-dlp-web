@@ -15,6 +15,11 @@ export interface BootOptions {
 	readWheel: (pin: WheelPin) => Promise<ArrayBuffer | Uint8Array>;
 	/** Carries every yt-dlp HTTP request. */
 	transport: SyncTransport;
+	/**
+	 * Runs a YouTube JS-challenge solver program and returns what it printed
+	 * (the relay Worker's /solve). Omit when this deployment cannot solve.
+	 */
+	solver?: (program: string) => string;
 	onProgress?: (stage: BootStage) => void;
 }
 
@@ -97,7 +102,7 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
 	}
 
 	onProgress('yt-dlp');
-	pyodide.pyimport('ytdlp_web.bootstrap').install(options.transport);
+	pyodide.pyimport('ytdlp_web.bootstrap').install(options.transport, options.solver ?? null);
 	const api = pyodide.pyimport('ytdlp_web.api');
 
 	onProgress('ready');

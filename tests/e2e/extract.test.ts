@@ -35,6 +35,10 @@ test.describe('extraction in a real browser worker', () => {
 		expect(workerCsp).not.toContain("'unsafe-eval'");
 		expect(workerCsp).toContain("require-trusted-types-for 'script'; trusted-types 'none'");
 
+		// The fixture relay has no Worker Loader (like a Free-plan deploy): the UI
+		// says so, and yt-dlp is told the challenge solver is unavailable.
+		await expect(page.locator('[data-solver="unavailable"]')).toBeVisible();
+
 		await page.getByLabel('Video URL').fill('https://www.fixtures.test/watch');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
 

@@ -3,7 +3,11 @@ import type { EngineLoad, EngineProgress, EngineRequest } from './client';
 import type { ExtractResult } from './runtime';
 import { ExtractSession, normalizeInput } from './session.svelte';
 
-const LOAD: EngineLoad = { assetsBase: 'https://app.test/', relayEndpoint: 'https://relay.test/relay' };
+const LOAD: EngineLoad = {
+	assetsBase: 'https://app.test/',
+	relayEndpoint: 'https://relay.test/relay',
+	solveEndpoint: 'https://relay.test/solve'
+};
 const OK: ExtractResult = {
 	ok: true,
 	info: { id: 'x', title: 'Clip', formats: [] },
@@ -43,6 +47,16 @@ describe('ExtractSession', () => {
 		expect(session.bootStage).toBe('ready');
 		expect(spawn).toHaveBeenCalledOnce();
 		expect(client.load).toHaveBeenCalledWith(LOAD);
+	});
+
+	it("records whether the deployment can solve YouTube's JS challenges", async () => {
+		const { spawn } = fakeEngine({});
+		const session = new ExtractSession(spawn, LOAD);
+		expect(session.solverAvailable).toBeNull();
+		const booting = session.boot();
+		spawn.mock.calls[0][0]({ kind: 'capabilities', solver: false });
+		await booting;
+		expect(session.solverAvailable).toBe(false);
 	});
 
 	it('surfaces a failed boot instead of hanging', async () => {

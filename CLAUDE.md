@@ -9,7 +9,9 @@ yt-dlp-web runs the **unmodified** [yt-dlp](https://github.com/yt-dlp/yt-dlp) Py
 ## Toolchain
 
 - **Bun is the package manager and script runner only** — Vitest and Playwright remain the test runners. Always `bun run test`, never `bun test` (that invokes Bun's built-in test runner, which cannot run this suite).
-- The Pyodide integration test (`src/lib/engine/pyodide.integration.test.ts`) boots the **real Pyodide runtime** and installs the **real pinned yt-dlp wheels**, downloaded and hash-verified into the gitignored `.wheel-cache/` by `bun run fetch:wheels`; it runs under `@vitest-environment node` and skips itself if the wheels are missing. `Dockerfile.test` runs the fetch at image build, so CI always exercises it.
+- Vitest has two projects (`vite.config.ts`): **`unit`** (jsdom, Svelte's browser build — components, runes classes, browser-side logic) and **`node`** (plain Node resolution — `*.integration.test.ts`, `worker/**`, root `*.test.ts`). `svelteTesting()` adds the `browser` resolve condition, which swaps in browser stubs for packages like `ws`, so anything that boots a runtime lives in `node`.
+- The Pyodide integration tests (`src/lib/engine/*.integration.test.ts`) boot the **real Pyodide runtime** and install the **real pinned yt-dlp wheels**, downloaded and hash-verified into the gitignored `.wheel-cache/` by `bun run fetch:wheels`; they skip themselves if the wheels are missing. `Dockerfile.test` runs the fetch at image build, so CI always exercises them.
+- `worker/src/solve.workerd.test.ts` runs the Worker in **real workerd** (Wrangler's `createTestHarness`, reading `worker/wrangler.jsonc` with its Worker Loader binding) to prove the sandbox walls hold, including an adversarial program that smuggles `fetch()` into handler context.
 - `bun run dev`/`build` first run `bun run assets`: fetch the pinned wheels (a no-op when the cached copies still match their pins) and copy them plus the Pyodide runtime files from `node_modules/pyodide` into the gitignored `static/wheels/` and `static/pyodide/`.
 - Playwright uses a preinstalled Chromium at `/opt/pw-browsers/chromium` (`PLAYWRIGHT_CHROMIUM_PATH` overrides). Do not run `playwright install`. Firefox and WebKit run in CI (`E2E_BROWSERS=chromium,firefox,webkit` inside the Playwright image).
 - CI runs the suite inside `Dockerfile.test` (official Playwright base image, with the Bun binary copied in from `oven/bun`). **Its tag must match the `@playwright/test` version in `bun.lock`** — bump them together.
@@ -28,9 +30,13 @@ URL input → ExtractSession (runes)                     src/routes/+page.svelte
       extract_info(download=False) → JSON + live log   src/python/ytdlp_web/api.py
   → format table (muxed first)                         src/lib/ui/FormatTable.svelte, src/lib/formats.ts
 
+      YouTube JS challenges → SandboxJCP → POST /solve src/python/ytdlp_web/solver_jcp.py, src/lib/relay/client.ts (createSyncSolver)
+
 Relay Worker (no secrets, no storage, no parsing)      worker/src/
   /relay  one browser request → one upstream request   relay.ts (handler), policy.ts (SSRF guard), config.ts (env)
-  e2e: the same handler, fake site upstream            scripts/fixture-relay.ts, tests/fixtures/site.ts
+  /solve  solver program → worker_loader isolate       solve.ts (handler), sandbox.ts (isolate modules)
+  shared: origin gate, CORS, inert error responses     http.ts
+  e2e: the same handlers, fake site upstream           scripts/fixture-relay.ts, tests/fixtures/site.ts
 ```
 
 **Every I/O dependency is an injected seam** with a browser default: the Python transport (`bootstrap.install(transport)`), the relay's upstream fetch and rate limiter (`RelayDeps`), the session's engine factory (`SpawnEngine`), `XMLHttpRequest`/`fetch` in the relay clients. Tests pass fakes — see `session.svelte.test.ts` and `relay.test.ts` for the pattern.
@@ -56,9 +62,12 @@ Svelte 5 runes classes live in `.svelte.ts` files (`ExtractSession`) exposing `$
 - **Bodies reaching Python are capped at 32 MiB** (`X-Relay-Max-Bytes`). An extractor that needs bytes beyond the cut fails loudly (`_Body` in `relay_rh.py`) instead of reading a silently truncated page. Bulk media never goes through Python.
 - **Pyodide + yt-dlp need no `unsafe-eval`** — verified in e2e: the engine worker runs under a header CSP of `script-src 'self' 'wasm-unsafe-eval'` with `require-trusted-types-for 'script'; trusted-types 'none'`. Keep it that way.
 - **Untrusted JavaScript never runs in the app's origin.** YouTube's player JS is evaluated only inside `/solve`'s `worker_loader` isolate, created with `globalOutbound: null` (all `fetch()`/`connect()` throw) and no bindings. `/solve` receives the player source from the browser and performs no network I/O itself.
-- **yt-dlp's `JsRuntime` layer (Deno/Node/QuickJS subprocesses) is unusable** — there is no subprocess in Pyodide. The JS-challenge provider reuses the marshalling of `yt_dlp/extractor/youtube/jsc/_builtin/ejs.py` and only swaps the transport (subprocess → HTTP `/solve`).
+- **yt-dlp's `JsRuntime` layer (Deno/Node/QuickJS subprocesses) is unusable** — there is no subprocess in Pyodide. `SandboxJCP` subclasses yt-dlp's own `EJSBaseJCP` and overrides exactly one hook, `_run_js_runtime(program) → stdout`, which POSTs the program to `/solve`. Everything else — solver scripts from the pinned yt-dlp-ejs wheel (hash-checked by yt-dlp), player download, output parsing — is yt-dlp's code.
+- **`SandboxJCP.is_available()` must not do I/O** and must be honest: yt-dlp's YouTube extractor switches to player clients that need no challenge solving when no provider is available. The engine worker probes `GET /solve` once at boot (204 = can solve, 501 = no Worker Loader) and only then installs a solver.
+- **The solver program is evaluated inside the isolate's fetch handler** (`main.js` does `await import('./program.js')`), never at startup: startup has a much shorter CPU limit than `limits.cpuMs`. The walls, verified in workerd: at module scope async I/O is refused outright; from handler context `globalOutbound: null` refuses it; `env` is empty. Keep the program in its own module — never splice it into ours.
+- **Error reasons in headers go through `headerSafe()`** (`worker/src/http.ts`): workerd's error messages carry CR/LF stacks, which make `new Response()` throw and turn a meaningful 422 into a bare 500.
 - **No micropip, no CDN, no PyPI at runtime.** yt-dlp has zero required dependencies, so its pinned wheels are installed with `pyodide.unpackArchive(buffer, 'wheel')` from same-origin files. Wheels and the Pyodide distribution are build artifacts — never committed.
-- **Dynamic Workers (`worker_loader`) require a paid Cloudflare Workers plan.** On the free plan `/relay` works but `/solve` does not, and YouTube formats that need an n/sig challenge solved will be missing.
+- **Dynamic Workers (`worker_loaders`) require a paid Cloudflare Workers plan.** On the free plan, delete the `worker_loaders` block from `worker/wrangler.jsonc`: `/relay` still works, `/solve` answers 501, the UI says so, and yt-dlp uses YouTube clients that need no challenge solving (fewer formats).
 - **Muxed formats first.** Merging separate video and audio streams needs ffmpeg.wasm, which is opt-in, lazily loaded and single-threaded (so cross-origin isolation is never required).
 
 ## Conventions

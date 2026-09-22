@@ -23,13 +23,21 @@
  */
 export const RELAY_PATH = '/relay';
 
+/**
+ * YouTube's JS challenges: POST the solver program (text) → its stdout (text).
+ * GET answers 204 when this deployment can solve (worker_loader bound), 501 when not.
+ */
+export const SOLVE_PATH = '/solve';
+
 export const RelayHeader = {
 	url: 'X-Relay-Url',
 	headers: 'X-Relay-Headers',
 	maxBytes: 'X-Relay-Max-Bytes',
 	status: 'X-Relay-Status',
 	truncated: 'X-Relay-Truncated',
-	error: 'X-Relay-Error'
+	error: 'X-Relay-Error',
+	/** Required on POST /solve: forces a CORS preflight, so no page can drive-by the solver. */
+	solve: 'X-Solve'
 } as const;
 
 export type HeaderList = [string, string][];

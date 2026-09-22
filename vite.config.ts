@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import type { Plugin } from 'vite';
@@ -33,18 +34,38 @@ export default defineConfig({
 		format: 'es'
 	},
 	test: {
-		environment: 'jsdom',
-		setupFiles: ['./vitest-setup.ts'],
 		globals: true,
-		include: [
-			'src/**/*.{test,spec}.{js,ts}',
-			'worker/**/*.{test,spec}.ts',
-			'scripts/**/*.test.ts',
-			'*.test.ts'
-		],
-		exclude: ['tests/e2e/**', 'node_modules/**'],
-		// The Pyodide integration test boots a real interpreter.
+		// The Pyodide integration test boots a real interpreter; the workerd tests a runtime.
 		testTimeout: 60_000,
-		hookTimeout: 120_000
+		hookTimeout: 120_000,
+		projects: [
+			{
+				// Browser-side code and Svelte components: jsdom, Svelte's browser build.
+				extends: true,
+				test: {
+					name: 'unit',
+					environment: 'jsdom',
+					setupFiles: ['./vitest-setup.ts'],
+					include: ['src/**/*.{test,spec}.ts'],
+					exclude: ['src/**/*.integration.test.ts']
+				}
+			},
+			{
+				// Runtimes that must resolve like Node, not like a browser (svelteTesting
+				// adds the "browser" condition, which swaps in stubs for packages such as
+				// ws): real Pyodide, the Worker in workerd, config and build scripts.
+				resolve: { alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) } },
+				test: {
+					name: 'node',
+					environment: 'node',
+					include: [
+						'src/**/*.integration.test.ts',
+						'worker/**/*.test.ts',
+						'scripts/**/*.test.ts',
+						'*.test.ts'
+					]
+				}
+			}
+		]
 	}
 });

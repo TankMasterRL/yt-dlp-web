@@ -1,6 +1,6 @@
-"""Wire yt-dlp to the browser: swap its request handlers for RelayRH.
+"""Wire yt-dlp to the browser: RelayRH for HTTP, SandboxJCP for YouTube's JS challenges.
 
-Call ``install(js_transport)`` once, before any YoutubeDL is constructed.
+Call ``install(transport, solver)`` before any YoutubeDL is constructed.
 """
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ from . import relay_rh
 from .transport import Transport, TransportFailure, TransportRequest, TransportResponse
 
 
-def install(transport) -> None:
-    """Route all of yt-dlp's HTTP traffic through ``transport``.
+def install(transport, solver=None) -> None:
+    """Route yt-dlp's HTTP traffic through ``transport`` and its JS challenges to ``solver``.
 
-    ``transport`` is either a Python ``Transport`` or a JavaScript function
-    implementing the ``SyncTransport`` contract (src/lib/engine/transport.ts).
+    ``transport`` is a Python ``Transport`` or a JavaScript function implementing
+    ``SyncTransport`` (src/lib/engine/transport.ts). ``solver`` takes a solver
+    program and returns its output (Python or JavaScript); ``None`` means this
+    deployment cannot solve, and yt-dlp uses YouTube clients that need no solving.
     """
     # yt-dlp's built-in handlers (urllib; requests/curl_cffi/websockets are not
     # installed) need sockets and TLS, which Pyodide does not have: its ssl
@@ -23,6 +25,12 @@ def install(transport) -> None:
     common.register_rh(relay_rh.RelayRH)
     relay_rh.set_transport(transport if _is_python_callable(transport) else _js_adapter(transport))
 
+    from . import solver_jcp  # importing registers SandboxJCP with yt-dlp
+    if solver is None or _is_python_callable(solver):
+        solver_jcp.set_solver(solver)
+    else:
+        solver_jcp.set_solver(_js_solver_adapter(solver))
+
 
 def _is_python_callable(obj) -> bool:
     try:
@@ -30,6 +38,20 @@ def _is_python_callable(obj) -> bool:
     except ImportError:  # plain CPython (no Pyodide): only Python transports exist
         return True
     return not isinstance(obj, JsProxy)
+
+
+def _js_solver_adapter(js_solver):
+    from pyodide.ffi import JsException
+
+    from .solver_jcp import SolverFailure
+
+    def solve(program: str) -> str:
+        try:
+            return str(js_solver(program))
+        except JsException as e:
+            raise SolverFailure(str(e)) from e
+
+    return solve
 
 
 def _js_adapter(js_transport) -> Transport:

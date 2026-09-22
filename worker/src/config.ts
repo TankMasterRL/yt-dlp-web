@@ -1,5 +1,6 @@
 import { parseHostPatterns } from './policy';
 import type { RelayConfig } from './relay';
+import type { SolveConfig } from './solve';
 
 export interface Env {
 	/** Comma-separated host patterns the relay may fetch (`a.com, *.b.com`). */
@@ -8,6 +9,9 @@ export interface Env {
 	ALLOWED_ORIGINS?: string;
 	MAX_REQUEST_BODY_BYTES?: string;
 	MAX_BUFFERED_BYTES?: string;
+	/** CPU budget for one /solve isolate, in milliseconds. */
+	SOLVE_CPU_MS?: string;
+	MAX_PROGRAM_BYTES?: string;
 	/** Workers Rate Limiting binding (`ratelimits` in wrangler.jsonc). */
 	RATE_LIMITER?: RateLimit;
 	/** Dynamic Worker Loader binding for /solve (`worker_loaders`). Paid plans only. */
@@ -37,6 +41,15 @@ export function relayConfig(env: Env): RelayConfig {
 		allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS ?? ''),
 		maxRequestBodyBytes: positiveInt(env.MAX_REQUEST_BODY_BYTES, 1 << 20),
 		maxBufferedBytes: positiveInt(env.MAX_BUFFERED_BYTES, 32 << 20)
+	};
+}
+
+export function solveConfig(env: Env): SolveConfig {
+	return {
+		allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS ?? ''),
+		// One solve parses a multi-megabyte player script: ~1–3 s of CPU in V8.
+		cpuMs: positiveInt(env.SOLVE_CPU_MS, 10_000),
+		maxProgramBytes: positiveInt(env.MAX_PROGRAM_BYTES, 8 << 20)
 	};
 }
 

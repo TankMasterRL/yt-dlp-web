@@ -14,6 +14,12 @@ describe('worker routing', () => {
 		expect(res.headers.get(RelayHeader.error)).toMatch(/X-Relay-Url/);
 	});
 
+	it('routes /solve to the solver, which reports whether it can solve', async () => {
+		expect((await call('/solve', {})).status).toBe(501);
+		const loader = { load: vi.fn() };
+		expect((await call('/solve', { LOADER: loader as never })).status).toBe(204);
+	});
+
 	it('serves the static app when deployed all-in-one', async () => {
 		const assets = { fetch: vi.fn(async () => new Response('<!doctype html>')) };
 		const res = await call('/library/', { ASSETS: assets as never });

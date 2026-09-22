@@ -16,7 +16,12 @@
 	// download in 10 MB chunks is ~100.
 	"ratelimits": [
 		{ "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 600, "period": 60 } }
-	]
+	],
+	// /solve runs YouTube's player JS in a network-severed Dynamic Worker isolate.
+	// Worker Loaders need a Workers Paid plan: on the Free plan, delete this
+	// block — the relay still works, /solve answers 501, and yt-dlp falls back to
+	// YouTube clients that need no JS challenge solving (fewer formats).
+	"worker_loaders": [{ "binding": "LOADER" }]
 	// All-in-one deploy — this Worker also serves the app from one origin, with full
 	// security headers and no CORS. Build the app WITHOUT VITE_RELAY_URL, then:
 	// "assets": { "directory": "../build", "binding": "ASSETS", "run_worker_first": ["/relay"] }

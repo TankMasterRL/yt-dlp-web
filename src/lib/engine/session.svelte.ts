@@ -37,6 +37,8 @@ export class ExtractSession {
 	engineState = $state<EngineState>('idle');
 	bootStage = $state<BootStage | null>(null);
 	engineError = $state<string | null>(null);
+	/** Can this deployment solve YouTube's JS challenges? null until the engine says. */
+	solverAvailable = $state<boolean | null>(null);
 	busy = $state(false);
 	inputError = $state<string | null>(null);
 	log = $state<LogLine[]>([]);
@@ -98,6 +100,7 @@ export class ExtractSession {
 
 	#onProgress(progress: EngineProgress): void {
 		if (progress.kind === 'boot') this.bootStage = progress.stage;
+		else if (progress.kind === 'capabilities') this.solverAvailable = progress.solver;
 		else this.log.push({ level: progress.level, line: progress.line });
 	}
 }

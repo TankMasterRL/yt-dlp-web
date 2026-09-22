@@ -25,6 +25,8 @@ if (browsers.includes('webkit')) projects.push({ name: 'webkit', use: devices['D
 
 export default defineConfig({
 	testDir: 'tests/e2e',
+	// @live tests hit real YouTube through a deployed app; run them with LIVE_APP_URL set.
+	grepInvert: process.env.LIVE_APP_URL ? undefined : /@live/,
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,

@@ -13,6 +13,8 @@ export interface EngineLoad {
 	assetsBase: string;
 	/** Absolute URL of the relay endpoint. */
 	relayEndpoint: string;
+	/** Absolute URL of the Worker's /solve endpoint (YouTube JS challenges). */
+	solveEndpoint: string;
 }
 
 export interface EngineRequest {
@@ -22,6 +24,8 @@ export interface EngineRequest {
 
 export type EngineProgress =
 	| { kind: 'boot'; stage: BootStage }
+	/** Whether the deployment can solve YouTube's JS challenges (probed at boot). */
+	| { kind: 'capabilities'; solver: boolean }
 	| { kind: 'log'; level: LogLevel; line: string };
 
 export type EngineClient = WorkerClient<EngineLoad, EngineRequest, ExtractResult, EngineProgress>;
