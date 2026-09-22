@@ -15,7 +15,7 @@ export type FromWorker<R, P> =
 	| { type: 'progress'; id?: number; payload: P }
 	| { type: 'ready' }
 	| { type: 'result'; id: number; payload: R }
-	| { type: 'error'; id?: number; message: string };
+	| { type: 'error'; id?: number; message: string; name?: string };
 
 /** The subset of Worker / MessagePort both ends need. */
 export interface Endpoint {
@@ -41,7 +41,7 @@ export function serveWorker<L, Q, R, P>(
 				await handlers.load(message.payload, (payload) => send({ type: 'progress', payload }));
 				send({ type: 'ready' });
 			} catch (e) {
-				send({ type: 'error', message: errorMessage(e) });
+				send({ type: 'error', message: errorMessage(e), name: errorName(e) });
 			}
 			return;
 		}
@@ -52,7 +52,7 @@ export function serveWorker<L, Q, R, P>(
 			);
 			send({ type: 'result', id, payload });
 		} catch (e) {
-			send({ type: 'error', id, message: errorMessage(e) });
+			send({ type: 'error', id, message: errorMessage(e), name: errorName(e) });
 		}
 	});
 }
@@ -121,10 +121,14 @@ export class WorkerClient<L, Q, R, P> {
 			case 'result':
 				this.#settle(message.id)?.resolve(message.payload);
 				break;
-			case 'error':
-				if (message.id === undefined) this.#load?.reject(new Error(message.message));
-				else this.#settle(message.id)?.reject(new Error(message.message));
+			case 'error': {
+				// Errors cross the boundary as data; keep the name (AbortError vs a real failure).
+				const error = new Error(message.message);
+				if (message.name) error.name = message.name;
+				if (message.id === undefined) this.#load?.reject(error);
+				else this.#settle(message.id)?.reject(error);
 				break;
+			}
 		}
 	}
 
@@ -136,5 +140,9 @@ export class WorkerClient<L, Q, R, P> {
 }
 
 function errorMessage(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
+	return e instanceof Error || e instanceof DOMException ? e.message : String(e);
+}
+
+function errorName(e: unknown): string | undefined {
+	return e instanceof Error || e instanceof DOMException ? e.name : undefined;
 }

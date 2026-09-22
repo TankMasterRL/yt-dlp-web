@@ -5,7 +5,16 @@
  * runs for real without touching the internet. YouTube-specific paths are
  * covered by the @live tests instead (youtube.com is unreachable in CI).
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 export const FIXTURE_HOSTS = '*.fixtures.test';
+
+/** Real, playable VP8 clips (scripts/make-fixture-media.ts). */
+const media = (name: string) =>
+	new Uint8Array(readFileSync(fileURLToPath(new URL(`./media/${name}`, import.meta.url))));
+export const CLIP_360 = media('bbf-360.webm');
+export const CLIP_720 = media('bbf-720.webm');
 
 export interface Fixture {
 	status?: number;
@@ -18,15 +27,10 @@ const WATCH_PAGE = `<!doctype html><html><head>
 <meta property="og:title" content="Big Buck Fixture">
 </head><body>
 <video controls>
-  <source src="https://media.fixtures.test/bbf-360.mp4" type="video/mp4">
-  <source src="https://media.fixtures.test/bbf-720.mp4" type="video/mp4">
+  <source src="https://media.fixtures.test/bbf-360.webm" type="video/webm">
+  <source src="https://media.fixtures.test/bbf-720.webm" type="video/webm">
 </video>
 </body></html>`;
-
-/** 24 bytes of MP4 `ftyp` box: enough for yt-dlp to call it a video file. */
-const MP4_STUB = new Uint8Array([
-	0, 0, 0, 24, 102, 116, 121, 112, 109, 112, 52, 50, 0, 0, 0, 0, 109, 112, 52, 50, 105, 115, 111, 109
-]);
 
 export const FIXTURES: Record<string, Fixture> = {
 	'https://www.fixtures.test/watch': {
@@ -37,8 +41,13 @@ export const FIXTURES: Record<string, Fixture> = {
 		status: 302,
 		headers: { Location: 'https://www.fixtures.test/watch' }
 	},
-	'https://media.fixtures.test/bbf-360.mp4': { headers: { 'Content-Type': 'video/mp4' }, body: MP4_STUB },
-	'https://media.fixtures.test/bbf-720.mp4': { headers: { 'Content-Type': 'video/mp4' }, body: MP4_STUB }
+	'https://media.fixtures.test/bbf-360.webm': { headers: { 'Content-Type': 'video/webm' }, body: CLIP_360 },
+	'https://media.fixtures.test/bbf-720.webm': { headers: { 'Content-Type': 'video/webm' }, body: CLIP_720 },
+	// A media host that hands out one-hop redirects, as googlevideo.com sometimes does.
+	'https://redirector.fixtures.test/bbf-360.webm': {
+		status: 302,
+		headers: { Location: 'https://media.fixtures.test/bbf-360.webm' }
+	}
 };
 
 /** A `fetch` over FIXTURES, with Range support, for the relay's upstream seam. */

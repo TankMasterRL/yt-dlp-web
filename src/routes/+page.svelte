@@ -1,21 +1,35 @@
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { spawnEngine } from '$lib/engine/client';
-	import type { BootStage } from '$lib/engine/runtime';
+	import type { BootStage, FormatInfo } from '$lib/engine/runtime';
 	import { ExtractSession } from '$lib/engine/session.svelte';
 	import { WHEELS } from '$lib/engine/wheels';
+	import { appEndpoints } from '$lib/endpoints';
 	import { formatDuration, primaryVideo } from '$lib/formats';
-	import { relayEndpoint, solveEndpoint } from '$lib/relay/client';
+	import { getLibrary } from '$lib/storage/instance';
+	import { progressLabel, statusLabel } from '$lib/storage/present';
 	import FormatTable from '$lib/ui/FormatTable.svelte';
 
 	// Resolved here, in browser-only code: workers get absolute URLs in `load`.
-	const relayUrl = import.meta.env.VITE_RELAY_URL;
+	const endpoints = appEndpoints();
 	const session = new ExtractSession(spawnEngine, {
-		assetsBase: new URL(`${base}/`, location.href).href,
-		relayEndpoint: new URL(relayEndpoint(relayUrl), location.href).href,
-		solveEndpoint: new URL(solveEndpoint(relayUrl), location.href).href
+		assetsBase: endpoints.assetsBase,
+		relayEndpoint: endpoints.relay,
+		solveEndpoint: endpoints.solve
 	});
+	const library = getLibrary(endpoints.relay);
+	/** Library item ids started from this page, newest first. */
+	let started = $state<string[]>([]);
+	const startedItems = $derived(
+		started.map((id) => library.items.find((i) => i.id === id)).filter((i) => i !== undefined)
+	);
+
+	async function download(format: FormatInfo) {
+		if (!session.result?.ok) return;
+		const item = await library.add(session.result.info, format);
+		started = [item.id, ...started];
+	}
 
 	onMount(() => {
 		session.boot().catch(() => {});
@@ -118,11 +132,29 @@
 			</p>
 		</header>
 		{#if video.formats?.length}
-			<FormatTable formats={video.formats} recommended={video.format_id} />
+			<FormatTable formats={video.formats} recommended={video.format_id} onDownload={download} />
 		{:else}
 			<p>No downloadable formats were found.</p>
 		{/if}
 	</article>
+{/if}
+
+{#if startedItems.length}
+	<section class="started" aria-label="Downloads started here">
+		<h2>Downloads</h2>
+		<ul>
+			{#each startedItems as item (item.id)}
+				{@const live = library.live[item.id]}
+				<li data-status={item.status}>
+					<span class="name">{item.title} <code>[{item.formatId}]</code></span>
+					<span class="state">
+						{statusLabel(item.status)}{#if live} · {progressLabel(live)}{:else if item.status === 'failed'} · {item.error}{/if}
+					</span>
+				</li>
+			{/each}
+		</ul>
+		<p><a href={resolve('/library/')}>Open the library</a> to play, save or manage downloads.</p>
+	</section>
 {/if}
 
 <style>
@@ -213,5 +245,45 @@
 		gap: 1rem;
 		color: var(--muted);
 		margin: 0 0 1rem;
+	}
+
+	.started {
+		margin-top: 1.5rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+	}
+
+	.started h2 {
+		font-size: 1rem;
+		margin: 0 0 0.5rem;
+	}
+
+	.started ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.35rem;
+	}
+
+	.started li {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		font-size: 0.9rem;
+	}
+
+	.started .state {
+		color: var(--muted);
+	}
+
+	.started li[data-status='complete'] .state {
+		color: var(--ok);
+	}
+
+	.started li[data-status='failed'] .state {
+		color: var(--danger);
 	}
 </style>

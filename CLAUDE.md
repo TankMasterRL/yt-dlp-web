@@ -28,7 +28,11 @@ URL input → ExtractSession (runes)                     src/routes/+page.svelte
       bootstrap: yt-dlp's handlers → RelayRH           src/python/ytdlp_web/{bootstrap,relay_rh,transport}.py
       RelayRH → SyncTransport (sync XHR)               src/lib/relay/client.ts (createSyncTransport)
       extract_info(download=False) → JSON + live log   src/python/ytdlp_web/api.py
-  → format table (muxed first)                         src/lib/ui/FormatTable.svelte, src/lib/formats.ts
+  → format table (muxed first)                         src/lib/ui/FormatTable.svelte, src/lib/formats.ts (downloadPlan)
+  → Library (runes): IndexedDB metadata                src/lib/storage/{library.svelte,db,instance}.ts
+      download worker: ranged relayFetch → OPFS        src/workers/download.worker.ts, src/lib/download/download.ts
+      one Web Lock per running item (cross-tab truth)  src/lib/download/locks.ts
+  → library page: play / save / pause / delete         src/routes/library/+page.svelte, src/lib/ui/PlayerDialog.svelte
 
       YouTube JS challenges → SandboxJCP → POST /solve src/python/ytdlp_web/solver_jcp.py, src/lib/relay/client.ts (createSyncSolver)
 
@@ -69,6 +73,11 @@ Svelte 5 runes classes live in `.svelte.ts` files (`ExtractSession`) exposing `$
 - **No micropip, no CDN, no PyPI at runtime.** yt-dlp has zero required dependencies, so its pinned wheels are installed with `pyodide.unpackArchive(buffer, 'wheel')` from same-origin files. Wheels and the Pyodide distribution are build artifacts — never committed.
 - **Dynamic Workers (`worker_loaders`) require a paid Cloudflare Workers plan.** On the free plan, delete the `worker_loaders` block from `worker/wrangler.jsonc`: `/relay` still works, `/solve` answers 501, the UI says so, and yt-dlp uses YouTube clients that need no challenge solving (fewer formats).
 - **Muxed formats first.** Merging separate video and audio streams needs ffmpeg.wasm, which is opt-in, lazily loaded and single-threaded (so cross-origin isolation is never required).
+- **Bulk media never goes through Python.** yt-dlp only resolves formats; `downloadPlan()` hands the chosen format's URL, `http_headers` and `http_chunk_size` to the download worker, which fetches ranged chunks via `relayFetch` and writes them with an OPFS **sync access handle** (dedicated workers only). Resume = start from the file's current size.
+- **A download's truth is its Web Lock.** The download worker holds `yt-dlp-web:download:<id>` while it runs. `Library.load()` marks `downloading` items whose lock nobody holds as `paused` (a tab closed mid-download) — never ones another tab is running — and a second tab can never open a second writer for the same file.
+- **Errors keep their name across worker boundaries** (`protocol.ts` sends `name`): the Library tells a pause (`AbortError`) from a failure by it.
+- **Thumbnails also come through the relay** and are stored as Blobs only if the tunnelled Content-Type is `image/*`; the page shows them from `blob:` URLs (CSP `img-src 'self' blob: data:`), so no image host sees the viewer.
+- **Export names are sanitized** (`exportFileName`): no separators, reserved or control characters, leading dots or trailing dots/spaces.
 
 ## Conventions
 
@@ -78,6 +87,7 @@ Svelte 5 runes classes live in `.svelte.ts` files (`ExtractSession`) exposing `$
 - E2e determinism: Playwright starts `scripts/fixture-relay.ts` — the **real** relay handler with the fake site in `tests/fixtures/site.ts` as upstream — and builds the app with `VITE_RELAY_URL` pointing at it, so e2e exercises sync XHR, CORS preflights and the relay's policy for real. Don't stub the relay with `page.route`.
 - **CSP is a test gate**: e2e fails on any CSP / Trusted Types violation (`tests/e2e/csp.ts`, plus console capture for workers). `vite preview` sends worker scripts the header CSP from `csp.config.js`, the single source of the policy.
 - Tests that don't touch the DOM run under `// @vitest-environment node`: jsdom and Node typed arrays come from different realms and never compare equal.
+- Fixture media are real, playable VP8 WebM clips (`tests/fixtures/media/`, regenerate with `bun scripts/make-fixture-media.ts`) — WebM because Chromium builds without proprietary codecs cannot play H.264. The e2e library journey compares the exported file's SHA-256 with the fixture's.
 - **Never hardcode root-relative asset URLs** — subpath deploys (`BASE_PATH` env → `kit.paths.base`) break them. Resolve `base` at the call site in browser-only code (`+page.svelte`) and hand workers absolute URLs in their `load` message; workers must not import `$app/paths`.
 - Build-time env: `BASE_PATH` (subpath hosting) and `VITE_RELAY_URL` (the relay Worker's origin — also the only extra origin in CSP `connect-src`; unset means same-origin, all-in-one).
 

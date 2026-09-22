@@ -96,7 +96,7 @@ export function plainError(status: number, reason: string, extra: Record<string,
 export async function readCapped(
 	stream: ReadableStream<Uint8Array> | null,
 	cap: number
-): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+): Promise<{ bytes: Uint8Array<ArrayBuffer>; truncated: boolean }> {
 	if (!stream) return { bytes: new Uint8Array(), truncated: false };
 	const reader = stream.getReader();
 	const chunks: Uint8Array[] = [];

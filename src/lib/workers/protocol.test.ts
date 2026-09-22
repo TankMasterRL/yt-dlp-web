@@ -75,6 +75,17 @@ describe('worker protocol', () => {
 		expect(results[1]).toMatchObject({ status: 'fulfilled', value: 'ok' });
 	});
 
+	it('preserves the error name across the boundary, so callers can tell an abort from a failure', async () => {
+		const { client } = pair<void, void, never, never>({
+			async load() {},
+			work() {
+				throw new DOMException('The operation was aborted.', 'AbortError');
+			}
+		});
+		await client.load();
+		await expect(client.call()).rejects.toMatchObject({ name: 'AbortError', message: 'The operation was aborted.' });
+	});
+
 	it('makes calls wait for load() instead of racing it', async () => {
 		let loaded = false;
 		const { client } = pair<void, void, boolean, never>({
