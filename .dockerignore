@@ -1,0 +1,15 @@
+node_modules
+.svelte-kit
+build
+.wheel-cache
+static/pyodide
+static/wheels
+.wrangler
+test-results
+playwright-report
+blob-report
+coverage
+.git
+.env
+.env.*
+.dev.vars*

@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 yt-dlp-web runs the **unmodified** [yt-dlp](https://github.com/yt-dlp/yt-dlp) Python package in the browser via Pyodide, inside a static SvelteKit app built with Bun. Downloads land in origin-private storage (OPFS) and are browsable in an in-app library. A Cloudflare Worker does the two things a web page is not allowed to do: relay bytes across CORS (`/relay`), and run YouTube's untrusted player JavaScript in a network-severed sandbox (`/solve`). Everything browser-specific plugs into yt-dlp's own plugin seams — `RequestHandler` for networking and `JsChallengeProvider` for YouTube's JS challenges — so yt-dlp itself is never patched.
 
+## Toolchain
+
+- **Bun is the package manager and script runner only** — Vitest and Playwright remain the test runners. Always `bun run test`, never `bun test` (that invokes Bun's built-in test runner, which cannot run this suite).
+- The Pyodide integration test (`src/lib/engine/pyodide.integration.test.ts`) boots the **real Pyodide runtime** and installs the **real pinned yt-dlp wheels**, downloaded and hash-verified into the gitignored `.wheel-cache/` by `bun run fetch:wheels`; it runs under `@vitest-environment node` and skips itself if the wheels are missing. `Dockerfile.test` runs the fetch at image build, so CI always exercises it.
+- `bun run dev`/`build` first run `bun run assets`: fetch the pinned wheels (a no-op when the cached copies still match their pins) and copy them plus the Pyodide runtime files from `node_modules/pyodide` into the gitignored `static/wheels/` and `static/pyodide/`.
+- Playwright uses a preinstalled Chromium at `/opt/pw-browsers/chromium` (`PLAYWRIGHT_CHROMIUM_PATH` overrides). Do not run `playwright install`. Firefox and WebKit run in CI (`E2E_BROWSERS=chromium,firefox,webkit` inside the Playwright image).
+- CI runs the suite inside `Dockerfile.test` (official Playwright base image, with the Bun binary copied in from `oven/bun`). **Its tag must match the `@playwright/test` version in `bun.lock`** — bump them together.
+- Version ceilings that are not accidents: **TypeScript 6** (SvelteKit and svelte-check do not accept 7 yet) and **Vitest 4**.
+
 ## Hard constraints (these explain non-obvious code)
 
 - **The Worker is mandatory.** youtube.com sends no `Access-Control-Allow-Origin` for arbitrary origins, so a page cannot fetch a watch page or player JS directly. Don't try to "remove the proxy". The Worker holds no secrets, stores nothing and parses nothing.

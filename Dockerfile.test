@@ -1,0 +1,35 @@
+# Hermetic test runner: type-check (svelte-check), unit/integration tests
+# (Vitest, including the real-Pyodide + real-wheel yt-dlp integration test — the
+# pinned wheels are fetched and hash-verified at image build time; no wheels live
+# in the repo), and the Playwright e2e suite on Chromium, Firefox and WebKit.
+#
+# The base image version MUST match the @playwright/test version in bun.lock —
+# the image ships the exact browser builds that library version expects, so no
+# `playwright install` is needed.
+FROM mcr.microsoft.com/playwright:v1.61.1-noble
+
+# Bun drives installs and package scripts; the Vitest/Playwright binaries still
+# execute under the image's Node runtime via their shebangs.
+COPY --from=oven/bun:1.3.14 /usr/local/bin/bun /usr/local/bin/bun
+
+WORKDIR /app
+
+# Dependency layer first so source-only changes don't re-run bun install.
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+# Fetch the pinned yt-dlp wheels for the integration and e2e tests (own layer,
+# so source changes don't re-download them). The script verifies every SHA-256.
+COPY src/lib/engine/wheels.ts src/lib/engine/
+COPY scripts/fetch-wheels.ts scripts/
+RUN bun scripts/fetch-wheels.ts
+
+COPY . .
+
+ENV CI=1
+ENV E2E_BROWSERS=chromium,firefox,webkit
+
+# The e2e webServer builds the app and serves it on :4173 internally, so this
+# needs no network beyond what the tests stub. Run with --ipc=host: Chromium can
+# exhaust a container's default /dev/shm.
+CMD ["bash", "-c", "bun run check && bun run test && bun run test:e2e"]
