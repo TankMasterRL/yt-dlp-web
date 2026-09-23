@@ -42,5 +42,6 @@ describe('progress', () => {
 	it('describes statuses in words', () => {
 		expect(statusLabel('complete')).toBe('Downloaded');
 		expect(statusLabel('paused')).toBe('Paused');
+		expect(statusLabel('merging')).toBe('Merging');
 	});
 });

@@ -1,12 +1,20 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	import { asset, resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { spawnEngine } from '$lib/engine/client';
 	import type { BootStage, FormatInfo } from '$lib/engine/runtime';
 	import { ExtractSession } from '$lib/engine/session.svelte';
 	import { WHEELS } from '$lib/engine/wheels';
 	import { appEndpoints } from '$lib/endpoints';
-	import { formatDuration, primaryVideo } from '$lib/formats';
+	import {
+		bestMergePair,
+		codecName,
+		formatBytes,
+		formatDuration,
+		primaryVideo,
+		resolutionLabel,
+		sizeOf
+	} from '$lib/formats';
 	import { getLibrary } from '$lib/storage/instance';
 	import { progressLabel, statusLabel } from '$lib/storage/present';
 	import FormatTable from '$lib/ui/FormatTable.svelte';
@@ -18,7 +26,9 @@
 		relayEndpoint: endpoints.relay,
 		solveEndpoint: endpoints.solve
 	});
-	const library = getLibrary(endpoints.relay);
+	const library = getLibrary(endpoints);
+	/** Whether this deployment ships ffmpeg.wasm; null until asked. */
+	let canMerge = $state<boolean | null>(null);
 	/** Library item ids started from this page, newest first. */
 	let started = $state<string[]>([]);
 	const startedItems = $derived(
@@ -31,8 +41,15 @@
 		started = [item.id, ...started];
 	}
 
+	async function downloadMerged() {
+		if (!session.result?.ok || !merge) return;
+		const item = await library.addMerged(session.result.info, merge);
+		started = [item.id, ...started];
+	}
+
 	onMount(() => {
 		session.boot().catch(() => {});
+		void library.mergeAvailable().then((available) => (canMerge = available));
 		return () => session.dispose();
 	});
 
@@ -46,6 +63,16 @@
 	};
 
 	const video = $derived(session.result?.ok ? primaryVideo(session.result.info) : null);
+	/** yt-dlp's bv*+ba: the best separate video and audio streams, to merge here. */
+	const merge = $derived(video?.formats ? bestMergePair(video.formats) : null);
+	const mergeSize = $derived.by(() => {
+		const sizes = merge ? [sizeOf(merge.video), sizeOf(merge.audio)] : [];
+		if (!sizes.length || sizes.some((s) => !s)) return null;
+		return {
+			bytes: sizes.reduce((sum, s) => sum + s!.bytes, 0),
+			approx: sizes.some((s) => s!.approx)
+		};
+	});
 	const engineStatus = $derived(
 		session.engineState === 'failed'
 			? `The engine failed to start: ${session.engineError}`
@@ -135,6 +162,33 @@
 				{#if video.extractor_key}<span>via {video.extractor_key}</span>{/if}
 			</p>
 		</header>
+		{#if merge}
+			<section class="best" aria-labelledby="best-title">
+				<div>
+					<h3 id="best-title">Best quality · {resolutionLabel(merge.video)}</h3>
+					<p>
+						{codecName(merge.video.vcodec) ?? 'Video'} video + {codecName(merge.audio.acodec) ??
+							'audio'} audio, merged into one {merge.container.toUpperCase()} file right here — copied,
+						never re-encoded{#if mergeSize}
+							({mergeSize.approx ? '≈ ' : ''}{formatBytes(mergeSize.bytes)}){/if}.
+					</p>
+				</div>
+				{#if canMerge}
+					<button class="primary" type="button" onclick={downloadMerged}
+						>Download best quality</button
+					>
+					<p class="license">
+						Merging uses <a href={asset('/ffmpeg/NOTICE.txt')}>ffmpeg.wasm</a> (GPL-2.0-or-later), loaded
+						only when you merge.
+					</p>
+				{:else if canMerge === false}
+					<p class="note" data-merge="unavailable">
+						This deployment doesn't include ffmpeg.wasm, so separate video and audio can't be merged
+						here. Pick a format with both below, or download each stream on its own.
+					</p>
+				{/if}
+			</section>
+		{/if}
 		{#if video.formats?.length}
 			<FormatTable formats={video.formats} recommended={video.format_id} onDownload={download} />
 		{:else}
@@ -152,7 +206,7 @@
 				<li data-status={item.status}>
 					<span class="name">{item.title} <code>[{item.formatId}]</code></span>
 					<span class="state">
-						{statusLabel(item.status)}{#if live}
+						{statusLabel(item.status)}{#if live && item.status === 'downloading'}
 							· {progressLabel(live)}{:else if item.status === 'failed'}
 							· {item.error}{/if}
 					</span>
@@ -251,6 +305,45 @@
 		gap: 1rem;
 		color: var(--muted);
 		margin: 0 0 1rem;
+	}
+
+	.best {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		align-items: center;
+		gap: 0.25rem 1rem;
+		margin-bottom: 1rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--accent);
+		border-radius: var(--radius);
+		background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+	}
+
+	.best h3 {
+		font-size: 1rem;
+		margin: 0;
+	}
+
+	.best p {
+		margin: 0.2rem 0 0;
+		color: var(--muted);
+		font-size: 0.9rem;
+	}
+
+	.best .license,
+	.best .note {
+		grid-column: 1 / -1;
+		font-size: 0.8rem;
+	}
+
+	.best .note {
+		color: var(--warn);
+	}
+
+	@media (max-width: 40rem) {
+		.best {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	.started {

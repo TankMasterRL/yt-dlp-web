@@ -1,14 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { recordCspViolations } from './csp';
-
-/** CSP / Trusted Types violations inside workers only reach the console. */
-function recordConsoleCsp(page: Page): string[] {
-	const messages: string[] = [];
-	page.on('console', (message) => {
-		if (/Content Security Policy|Trusted Type/i.test(message.text())) messages.push(message.text());
-	});
-	return messages;
-}
+import { recordConsoleCsp, recordCspViolations } from './csp';
 
 async function engineReady(page: Page) {
 	await expect(page.locator('#engine-status')).toHaveAttribute('data-engine-state', 'ready', {

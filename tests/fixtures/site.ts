@@ -10,11 +10,44 @@ import { fileURLToPath } from 'node:url';
 
 export const FIXTURE_HOSTS = '*.fixtures.test';
 
-/** Real, playable VP8 clips (scripts/make-fixture-media.ts). */
+/** Real, playable clips: VP8 video, Opus audio (scripts/make-fixture-media.ts). */
 const media = (name: string) =>
 	new Uint8Array(readFileSync(fileURLToPath(new URL(`./media/${name}`, import.meta.url))));
 export const CLIP_360 = media('bbf-360.webm');
 export const CLIP_720 = media('bbf-720.webm');
+export const CLIP_AUDIO = media('bbf-audio.webm');
+
+/**
+ * Separate video-only and audio-only streams, as YouTube serves its best
+ * formats: a DASH manifest whose representations are single files (yt-dlp
+ * keeps their codecs; `<source>`s inside a <video> would all count as video).
+ * `yt:contentLength` is how YouTube's manifests state sizes.
+ */
+const SPLIT_PAGE = `<!doctype html><html><head>
+<title>Split fixture</title>
+<meta property="og:title" content="Split Stream Fixture">
+</head><body>
+<video controls>
+  <source src="https://www.fixtures.test/split.mpd" type="application/dash+xml">
+</video>
+</body></html>`;
+
+const SPLIT_MPD = `<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:yt="http://youtube.com/yt/2012/10/10" type="static"
+     mediaPresentationDuration="PT2S" minBufferTime="PT1S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">
+  <Period duration="PT2S">
+    <AdaptationSet mimeType="video/webm" contentType="video">
+      <Representation id="v360" codecs="vp8" width="640" height="360" frameRate="12" bandwidth="120000">
+        <BaseURL yt:contentLength="${CLIP_360.byteLength}">https://media.fixtures.test/bbf-360.webm</BaseURL>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/webm" contentType="audio">
+      <Representation id="a1" codecs="opus" audioSamplingRate="48000" bandwidth="128000">
+        <BaseURL yt:contentLength="${CLIP_AUDIO.byteLength}">https://media.fixtures.test/bbf-audio.webm</BaseURL>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
 
 export interface Fixture {
 	status?: number;
@@ -37,6 +70,14 @@ export const FIXTURES: Record<string, Fixture> = {
 		headers: { 'Content-Type': 'text/html; charset=utf-8' },
 		body: WATCH_PAGE
 	},
+	'https://www.fixtures.test/split': {
+		headers: { 'Content-Type': 'text/html; charset=utf-8' },
+		body: SPLIT_PAGE
+	},
+	'https://www.fixtures.test/split.mpd': {
+		headers: { 'Content-Type': 'application/dash+xml' },
+		body: SPLIT_MPD
+	},
 	'https://www.fixtures.test/moved': {
 		status: 302,
 		headers: { Location: 'https://www.fixtures.test/watch' }
@@ -48,6 +89,10 @@ export const FIXTURES: Record<string, Fixture> = {
 	'https://media.fixtures.test/bbf-720.webm': {
 		headers: { 'Content-Type': 'video/webm' },
 		body: CLIP_720
+	},
+	'https://media.fixtures.test/bbf-audio.webm': {
+		headers: { 'Content-Type': 'audio/webm' },
+		body: CLIP_AUDIO
 	},
 	// A media host that hands out one-hop redirects, as googlevideo.com sometimes does.
 	'https://redirector.fixtures.test/bbf-360.webm': {

@@ -17,8 +17,13 @@ BASE_PARAMS = {
     # Never fetch solver code from the network — it ships inside the pinned
     # (integrity-checked) yt-dlp-ejs wheel.
     'remote_components': [],
-    # Muxed (video+audio in one file) first: merging needs the opt-in ffmpeg.wasm.
-    'format': 'best[vcodec!=none][acodec!=none]/best',
+    # Muxed first (one file with both streams; merging needs the opt-in
+    # ffmpeg.wasm): known codecs, then any single file yt-dlp calls complete.
+    # Then the pair a merge would take, then any single stream. Plain `best`
+    # needs a file with both streams, so without the fallbacks a site offering
+    # only separate video and audio (DASH) fails with "Requested format is not
+    # available" instead of listing its formats.
+    'format': 'best[vcodec!=none][acodec!=none]/best/bestvideo*+bestaudio/best*',
 }
 
 #: Options a caller may override; anything else is ignored.

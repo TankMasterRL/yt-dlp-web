@@ -48,6 +48,7 @@
 		"wrangler": "^4.136.3"
 	},
 	"dependencies": {
+		"@ffmpeg/core": "0.12.10",
 		"pyodide": "314.0.7"
 	}
 }

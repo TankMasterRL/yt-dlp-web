@@ -8,7 +8,7 @@
 	import { exportFileName, progressLabel, statusLabel } from '$lib/storage/present';
 	import PlayerDialog from '$lib/ui/PlayerDialog.svelte';
 
-	const library = getLibrary(appEndpoints().relay);
+	const library = getLibrary(appEndpoints());
 
 	type Sort = 'newest' | 'oldest' | 'title' | 'size';
 	let query = $state('');
@@ -176,6 +176,8 @@
 								<span>{progressLabel(progress)}</span>
 							{:else if item.status === 'complete'}
 								<span>{formatBytes(item.bytesTotal ?? item.bytesDone)}</span>
+							{:else if item.status === 'merging'}
+								<span>Merging video and audio…</span>
 							{:else if item.status === 'failed'}
 								<span class="error">{item.error}</span>
 							{:else}
@@ -204,14 +206,16 @@
 								onclick={() => library.pause(item.id)}
 								aria-label="Pause {item.title}">Pause</button
 							>
-						{:else}
+						{:else if item.status !== 'merging'}
 							<button
 								type="button"
 								onclick={() => library.resume(item.id)}
 								aria-label="Resume {item.title}">Resume</button
 							>
 						{/if}
-						{#if confirmDelete === item.id}
+						{#if item.status === 'merging'}
+							<!-- ffmpeg holds the files until it finishes, in seconds. -->
+						{:else if confirmDelete === item.id}
 							<button
 								type="button"
 								class="danger"

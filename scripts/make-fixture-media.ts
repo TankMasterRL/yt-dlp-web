@@ -1,9 +1,14 @@
 /**
- * Regenerate tests/fixtures/media/*.webm — tiny, real, playable VP8 clips for
- * the e2e download → library → playback tests. Chromium draws the frames (JPEG
- * from a canvas); Playwright's bundled ffmpeg (MJPEG in, VP8/WebM out, with
- * proper duration metadata) encodes them. WebM because Chromium builds without
- * proprietary codecs cannot play H.264.
+ * Regenerate tests/fixtures/media/*.webm — tiny, real, playable clips for the
+ * e2e download → library → playback → merge tests:
+ *
+ * - bbf-360/720.webm: video only (VP8). Chromium draws the frames (JPEG from a
+ *   canvas); Playwright's bundled ffmpeg (MJPEG in, VP8/WebM out, with proper
+ *   duration metadata) encodes them.
+ * - bbf-audio.webm: audio only (Opus), recorded from an oscillator with
+ *   MediaRecorder (Playwright's ffmpeg has no audio encoders).
+ *
+ * WebM because Chromium builds without proprietary codecs cannot play H.264.
  *
  * The output is committed; this script only needs re-running to change it:
  *   bun scripts/make-fixture-media.ts
@@ -20,7 +25,10 @@ if (!ffmpegDir) throw new Error(`No Playwright ffmpeg under ${browsersPath}`);
 const ffmpeg = join(browsersPath, ffmpegDir, 'ffmpeg-linux');
 
 const prebuilt = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? '/opt/pw-browsers/chromium';
-const browser = await chromium.launch(existsSync(prebuilt) ? { executablePath: prebuilt } : {});
+const browser = await chromium.launch({
+	...(existsSync(prebuilt) ? { executablePath: prebuilt } : {}),
+	args: ['--autoplay-policy=no-user-gesture-required']
+});
 const page = await browser.newPage();
 
 async function renderFrames(width: number, height: number, frames: number, label: string) {
@@ -57,6 +65,8 @@ for (const [name, width, height] of [
 		ffmpeg,
 		[
 			'-y',
+			'-fflags',
+			'+bitexact',
 			'-f',
 			'image2pipe',
 			'-framerate',
@@ -70,6 +80,10 @@ for (const [name, width, height] of [
 			'-b:v',
 			'120k',
 			'-an',
+			'-fflags',
+			'+bitexact',
+			'-flags:v',
+			'+bitexact',
 			'-f',
 			'webm',
 			target
@@ -80,4 +94,26 @@ for (const [name, width, height] of [
 		throw new Error(`ffmpeg failed for ${name}: ${run.stderr.toString().slice(-800)}`);
 	console.log(`✓ ${target}`);
 }
+const audio: string = await page.evaluate(async () => {
+	const ctx = new AudioContext();
+	const oscillator = ctx.createOscillator();
+	oscillator.frequency.value = 440;
+	const destination = ctx.createMediaStreamDestination();
+	oscillator.connect(destination);
+	oscillator.start();
+	const recorder = new MediaRecorder(destination.stream, { mimeType: 'audio/webm;codecs=opus' });
+	const chunks: Blob[] = [];
+	recorder.ondataavailable = (e) => chunks.push(e.data);
+	const stopped = new Promise((r) => (recorder.onstop = r));
+	recorder.start();
+	await new Promise((r) => setTimeout(r, 2000));
+	recorder.stop();
+	await stopped;
+	const bytes = new Uint8Array(await new Blob(chunks).arrayBuffer());
+	let binary = '';
+	for (const b of bytes) binary += String.fromCharCode(b);
+	return btoa(binary);
+});
+await Bun.write(join(OUT, 'bbf-audio.webm'), Buffer.from(audio, 'base64'));
+console.log(`✓ ${join(OUT, 'bbf-audio.webm')}`);
 await browser.close();

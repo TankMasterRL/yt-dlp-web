@@ -18,6 +18,26 @@ export function resolutionLabel(format: FormatInfo): string {
 	return `${format.height}p${format.fps && format.fps > 30 ? Math.round(format.fps) : ''}`;
 }
 
+const CODEC_NAMES: [RegExp, string][] = [
+	[/^(avc|h264)/, 'H.264'],
+	[/^(hvc|hev|h265)/, 'H.265'],
+	[/^vp0?9/, 'VP9'],
+	[/^vp0?8/, 'VP8'],
+	[/^av0?1/, 'AV1'],
+	[/^(mp3|mp4a\.(6b|69|40\.34))/, 'MP3'],
+	[/^mp4a/, 'AAC'],
+	[/^opus/, 'Opus'],
+	[/^vorbis/, 'Vorbis'],
+	[/^flac/, 'FLAC']
+];
+
+/** A codec as people know it: 'avc1.64001F' → 'H.264'. */
+export function codecName(codec: string | undefined): string | null {
+	if (!codec || codec === 'none') return null;
+	const lower = codec.toLowerCase();
+	return CODEC_NAMES.find(([pattern]) => pattern.test(lower))?.[1] ?? codec.split('.')[0];
+}
+
 export function sizeOf(format: FormatInfo): { bytes: number; approx: boolean } | null {
 	if (format.filesize) return { bytes: format.filesize, approx: false };
 	if (format.filesize_approx) return { bytes: format.filesize_approx, approx: true };
@@ -84,4 +104,38 @@ export function downloadPlan(format: FormatInfo): DownloadPlan {
 		chunkSize: format.downloader_options?.http_chunk_size ?? null,
 		expectedBytes: sizeOf(format)?.bytes ?? null
 	};
+}
+
+/** Containers the remux worker writes; all hold both streams without re-encoding. */
+export type MergeContainer = 'mp4' | 'webm' | 'mkv';
+
+export interface MergePair {
+	video: FormatInfo;
+	audio: FormatInfo;
+	container: MergeContainer;
+}
+
+function containerFamily(ext: string | undefined): 'mp4' | 'webm' | 'other' {
+	if (ext === 'mp4' || ext === 'm4a' || ext === 'm4v' || ext === 'mov') return 'mp4';
+	if (ext === 'webm') return 'webm';
+	return 'other';
+}
+
+/**
+ * yt-dlp's `bv*+ba`, in the browser: the best video-only and audio-only
+ * downloadable streams (yt-dlp lists formats worst → best), preferring audio
+ * from the video's container family so the pair stays in MP4 or WebM;
+ * mixed families go to Matroska, which holds anything. Streams are copied,
+ * never re-encoded.
+ */
+export function bestMergePair(formats: readonly FormatInfo[]): MergePair | null {
+	const downloadable = formats.filter(isDownloadable);
+	const video = downloadable.filter((f) => formatKind(f) === 'video').at(-1);
+	const audios = downloadable.filter((f) => formatKind(f) === 'audio');
+	if (!video || !audios.length) return null;
+	const family = containerFamily(video.ext);
+	const audio = audios.findLast((a) => containerFamily(a.ext) === family) ?? audios.at(-1)!;
+	const container: MergeContainer =
+		family !== 'other' && containerFamily(audio.ext) === family ? family : 'mkv';
+	return { video, audio, container };
 }

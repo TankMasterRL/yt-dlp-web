@@ -11,6 +11,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { bestMergePair, primaryVideo } from '$lib/formats';
+import { CLIP_360, CLIP_AUDIO, FIXTURES as SITE } from '../../../tests/fixtures/site';
 import { bootEngine, type Engine } from './runtime';
 import type { TransportRequest, TransportResponse } from './transport';
 import { WHEELS, sha256Hex } from './wheels';
@@ -42,7 +44,22 @@ const PAGE = `<!doctype html><html><head>
 </video>
 </body></html>`;
 
+/** A page of the e2e fixture site, as a transport fixture. */
+const site =
+	(url: string): Fixture =>
+	() => {
+		const { status = 200, headers = {}, body = '' } = SITE[url];
+		return {
+			status,
+			headers: Object.entries(headers),
+			body: typeof body === 'string' ? enc.encode(body) : body,
+			truncated: false
+		};
+	};
+
 const fixtures: Record<string, Fixture> = {
+	'https://www.fixtures.test/split': site('https://www.fixtures.test/split'),
+	'https://www.fixtures.test/split.mpd': site('https://www.fixtures.test/split.mpd'),
 	'https://media.fixtures.test/clip.mp4': () =>
 		ok(MP4_BYTES, [
 			['Content-Type', 'video/mp4'],
@@ -150,6 +167,36 @@ str(keys)`);
 			'https://media.fixtures.test/bbf-360.mp4',
 			'https://media.fixtures.test/bbf-720.mp4'
 		]);
+	});
+
+	it('extracts a site that offers only separate video and audio, selecting the pair to merge', () => {
+		const result = engine.extract('https://www.fixtures.test/split');
+		if (!result.ok) expect.fail(result.error);
+		const video = primaryVideo(result.info);
+		expect(video.title).toMatch(/^Split Stream Fixture/);
+		// No muxed format exists: yt-dlp's own choice is the merge (bv*+ba)…
+		expect(video.format_id).toBe('v360+a1');
+		// …and bestMergePair, which the page offers, agrees with it.
+		expect(bestMergePair(video.formats ?? [])).toMatchObject({
+			video: {
+				format_id: 'v360',
+				url: 'https://media.fixtures.test/bbf-360.webm',
+				protocol: 'https',
+				vcodec: 'vp8',
+				acodec: 'none',
+				height: 360,
+				filesize: CLIP_360.byteLength
+			},
+			audio: {
+				format_id: 'a1',
+				url: 'https://media.fixtures.test/bbf-audio.webm',
+				protocol: 'https',
+				vcodec: 'none',
+				acodec: 'opus',
+				filesize: CLIP_AUDIO.byteLength
+			},
+			container: 'webm'
+		});
 	});
 
 	it('follows redirects hop by hop, scoping cookies to their domain', () => {

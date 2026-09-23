@@ -10,9 +10,11 @@ import {
 	formatKind,
 	primaryVideo,
 	resolutionLabel,
-	type DownloadPlan
+	type DownloadPlan,
+	type MergeContainer,
+	type MergePair
 } from '$lib/formats';
-import type { LibraryDb, LibraryItem } from './db';
+import type { LibraryDb, LibraryItem, MergePart } from './db';
 
 export interface DownloadRequest {
 	itemId: string;
@@ -29,6 +31,23 @@ export interface Downloader {
 	cancel(itemId: string): Promise<void>;
 }
 
+export interface MergeRequest {
+	itemId: string;
+	/** OPFS files to read. */
+	video: string;
+	audio: string;
+	/** OPFS file to write. */
+	output: string;
+	container: MergeContainer;
+}
+
+/** Remuxes (stream copy, no re-encoding) separate video and audio into one file. */
+export interface Remuxer {
+	/** Whether this deployment ships ffmpeg.wasm (it is opt-in at build time). */
+	available(): Promise<boolean>;
+	merge(request: MergeRequest): Promise<{ bytesTotal: number }>;
+}
+
 export interface FileStore {
 	get(fileName: string): Promise<File>;
 	remove(fileName: string): Promise<void>;
@@ -42,6 +61,8 @@ export interface ChannelLike {
 export interface LibraryDeps {
 	db: LibraryDb;
 	downloader: Downloader;
+	/** ffmpeg.wasm in the remux worker; absent when the deployment does not ship it. */
+	remuxer?: Remuxer;
 	files: FileStore;
 	/** Item ids some tab is downloading right now (Web Locks held by download workers). */
 	activeDownloads: () => Promise<Set<string>>;
@@ -75,7 +96,8 @@ export class Library {
 		for (const item of items) {
 			// A tab closed mid-download leaves "downloading" behind with nobody
 			// holding its lock: it is really paused (the bytes so far are kept).
-			if (item.status === 'downloading' && !active.has(item.id) && !(item.id in this.live)) {
+			const busy = item.status === 'downloading' || item.status === 'merging';
+			if (busy && !active.has(item.id) && !(item.id in this.live)) {
 				item.status = 'paused';
 				await this.#deps.db.put(item);
 			}
@@ -115,13 +137,57 @@ export class Library {
 		return item;
 	}
 
+	/** Download the best video-only and audio-only streams and remux them into one file. */
+	async addMerged(info: VideoInfo, pair: MergePair): Promise<LibraryItem> {
+		if (!this.#deps.remuxer) throw new Error('Merging is not available on this deployment');
+		const video = primaryVideo(info);
+		const id = this.#newId();
+		const part = (role: MergePart['role'], format: FormatInfo): MergePart => {
+			const plan = downloadPlan(format);
+			return { role, formatId: format.format_id, fileName: `${id}.${role}.${plan.ext}`, plan };
+		};
+		const parts = [part('video', pair.video), part('audio', pair.audio)];
+		const sizes = parts.map((p) => p.plan.expectedBytes);
+		const item: LibraryItem = {
+			id,
+			sourceUrl: video.webpage_url ?? pair.video.url,
+			videoId: video.id,
+			extractor: video.extractor_key ?? video.extractor ?? 'unknown',
+			title: video.title,
+			uploader: video.uploader ?? undefined,
+			duration: video.duration ?? undefined,
+			formatId: `${pair.video.format_id}+${pair.audio.format_id}`,
+			ext: pair.container,
+			kind: 'av',
+			resolution: resolutionLabel(pair.video),
+			fileName: `${id}.${pair.container}`,
+			bytesTotal: sizes.every((n) => n !== null) ? sizes.reduce((a, b) => a! + b!, 0) : null,
+			bytesDone: 0,
+			status: 'downloading',
+			createdAt: this.#now(),
+			plan: parts[0].plan,
+			parts
+		};
+		await this.#save(item);
+		this.items = [item, ...this.items];
+		void this.#run(id);
+		if (video.thumbnail && this.#deps.fetchThumbnail)
+			void this.#attachThumbnail(id, video.thumbnail);
+		return item;
+	}
+
+	/** Whether `addMerged` can work here. */
+	async mergeAvailable(): Promise<boolean> {
+		return (await this.#deps.remuxer?.available()) ?? false;
+	}
+
 	async pause(id: string): Promise<void> {
 		await this.#deps.downloader.cancel(id);
 	}
 
 	async resume(id: string): Promise<void> {
 		const item = this.#find(id);
-		if (!item || item.status === 'downloading' || item.status === 'complete') return;
+		if (item?.status !== 'paused' && item?.status !== 'failed') return;
 		item.status = 'downloading';
 		item.error = undefined;
 		await this.#save(item);
@@ -131,8 +197,11 @@ export class Library {
 	async remove(id: string): Promise<void> {
 		const item = this.#find(id);
 		if (!item) return;
+		// ffmpeg holds the files and cannot be interrupted; merges take seconds.
+		if (item.status === 'merging') throw new Error('Wait for the merge to finish');
 		if (item.status === 'downloading') await this.#deps.downloader.cancel(id);
 		await this.#deps.files.remove(item.fileName);
+		for (const part of item.parts ?? []) await this.#deps.files.remove(part.fileName);
 		await this.#deps.db.delete(id);
 		this.items = this.items.filter((i) => i.id !== id);
 		delete this.live[id];
@@ -149,12 +218,9 @@ export class Library {
 		const item = this.#find(id)!;
 		this.live[id] = { bytesDone: item.bytesDone, bytesTotal: item.bytesTotal };
 		try {
-			const { bytesTotal } = await this.#deps.downloader.start(
-				{ itemId: id, fileName: item.fileName, plan: $state.snapshot(item.plan) as DownloadPlan },
-				(progress) => {
-					this.live[id] = progress;
-				}
-			);
+			const bytesTotal = item.parts
+				? await this.#downloadAndMerge(item)
+				: await this.#download(item);
 			Object.assign(item, {
 				status: 'complete',
 				bytesDone: bytesTotal,
@@ -174,6 +240,57 @@ export class Library {
 			delete this.live[id];
 		}
 		if (this.#find(id)) await this.#save(item);
+	}
+
+	async #download(item: LibraryItem): Promise<number> {
+		const { bytesTotal } = await this.#deps.downloader.start(
+			{
+				itemId: item.id,
+				fileName: item.fileName,
+				plan: $state.snapshot(item.plan) as DownloadPlan
+			},
+			(progress) => {
+				this.live[item.id] = progress;
+			}
+		);
+		return bytesTotal;
+	}
+
+	/**
+	 * Parts download one at a time under the item's id (and so its Web Lock);
+	 * a finished part answers its next range request with 416 at once, so a
+	 * resume or a retry after a failed merge skips straight past it.
+	 */
+	async #downloadAndMerge(item: LibraryItem): Promise<number> {
+		let done = 0;
+		for (const part of item.parts!) {
+			const { bytesTotal } = await this.#deps.downloader.start(
+				{
+					itemId: item.id,
+					fileName: part.fileName,
+					plan: $state.snapshot(part.plan) as DownloadPlan
+				},
+				(progress) => {
+					this.live[item.id] = {
+						bytesDone: done + progress.bytesDone,
+						bytesTotal: item.bytesTotal
+					};
+				}
+			);
+			done += bytesTotal;
+		}
+		item.status = 'merging';
+		await this.#save(item);
+		const [video, audio] = item.parts!;
+		const { bytesTotal } = await this.#deps.remuxer!.merge({
+			itemId: item.id,
+			video: video.fileName,
+			audio: audio.fileName,
+			output: item.fileName,
+			container: item.ext as MergeContainer
+		});
+		for (const part of item.parts!) await this.#deps.files.remove(part.fileName);
+		return bytesTotal;
 	}
 
 	async #attachThumbnail(id: string, url: string): Promise<void> {

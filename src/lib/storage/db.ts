@@ -5,7 +5,15 @@
  */
 import type { DownloadPlan, FormatKind } from '$lib/formats';
 
-export type ItemStatus = 'downloading' | 'paused' | 'complete' | 'failed';
+export type ItemStatus = 'downloading' | 'merging' | 'paused' | 'complete' | 'failed';
+
+/** One half of a merged download, stored as its own OPFS file until remuxed. */
+export interface MergePart {
+	role: 'video' | 'audio';
+	formatId: string;
+	fileName: string;
+	plan: DownloadPlan;
+}
 
 export interface LibraryItem {
 	id: string;
@@ -30,8 +38,10 @@ export interface LibraryItem {
 	completedAt?: number;
 	/** Fetched through the relay, so no image host ever sees the viewer. */
 	thumbnail?: Blob;
-	/** What the download worker needs to (re)start. */
+	/** What the download worker needs to (re)start. For merged items: the video part. */
 	plan: DownloadPlan;
+	/** Present when the item is two streams remuxed into one file. */
+	parts?: MergePart[];
 }
 
 export interface LibraryDb {

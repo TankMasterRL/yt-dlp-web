@@ -11,6 +11,7 @@ vite.config.*.timestamp-*
 .wheel-cache/
 static/wheels/
 static/pyodide/
+static/ffmpeg/
 
 # Cloudflare
 .wrangler/

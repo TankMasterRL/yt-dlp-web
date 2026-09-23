@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
+import { bestMergePair } from '$lib/formats';
 import type { DownloadProgress } from '$lib/download/download';
 import type { LibraryDb, LibraryItem } from './db';
-import { Library, type Downloader, type LibraryDeps } from './library.svelte';
+import { Library, type Downloader, type LibraryDeps, type Remuxer } from './library.svelte';
 
 function memoryDb(initial: LibraryItem[] = []): LibraryDb {
 	const rows = new Map(initial.map((i) => [i.id, structuredClone(i)]));
@@ -246,5 +247,148 @@ describe('Library', () => {
 		listeners.forEach((l) => l(new MessageEvent('message', { data: 'changed' })));
 		await flush();
 		expect(library.items.map((i) => i.title)).toEqual(['From another tab']);
+	});
+});
+
+describe('merged downloads', () => {
+	const videoOnly: FormatInfo = {
+		format_id: '0',
+		url: 'https://media.fixtures.test/v.webm',
+		ext: 'webm',
+		vcodec: 'vp8',
+		acodec: 'none',
+		height: 360,
+		filesize: 30
+	};
+	const audioOnly: FormatInfo = {
+		format_id: '1',
+		url: 'https://media.fixtures.test/a.webm',
+		ext: 'webm',
+		vcodec: 'none',
+		acodec: 'opus',
+		filesize: 20
+	};
+	const pair = bestMergePair([videoOnly, audioOnly])!;
+
+	function remuxer() {
+		const merges: Parameters<Remuxer['merge']>[0][] = [];
+		let settle!: { resolve: (n: number) => void; reject: (e: Error) => void };
+		const r: Remuxer = {
+			available: async () => true,
+			merge: vi.fn((request) => {
+				merges.push(request);
+				return new Promise<{ bytesTotal: number }>((resolve, reject) => {
+					settle = { resolve: (n) => resolve({ bytesTotal: n }), reject };
+				});
+			})
+		};
+		return {
+			r,
+			merges,
+			finish: (n: number) => settle.resolve(n),
+			fail: (e: Error) => settle.reject(e)
+		};
+	}
+
+	it('downloads both parts, merges them into one file, then drops the parts', async () => {
+		const mux = remuxer();
+		const { library, downloader, deps } = setup({ remuxer: mux.r });
+		const item = await library.addMerged(video, pair);
+		expect(item).toMatchObject({
+			formatId: '0+1',
+			ext: 'webm',
+			kind: 'av',
+			resolution: '360p',
+			fileName: 'id1.webm',
+			bytesTotal: 50
+		});
+		expect(item.parts?.map((p) => [p.role, p.fileName])).toEqual([
+			['video', 'id1.video.webm'],
+			['audio', 'id1.audio.webm']
+		]);
+
+		// Parts download one after the other, progress summed across both.
+		expect(downloader.start).toHaveBeenLastCalledWith(
+			expect.objectContaining({ fileName: 'id1.video.webm' }),
+			expect.any(Function)
+		);
+		downloader.report('id1', { bytesDone: 30, bytesTotal: 30 });
+		expect(library.live.id1).toEqual({ bytesDone: 30, bytesTotal: 50 });
+		downloader.finish('id1', 30);
+		await flush();
+		expect(downloader.start).toHaveBeenLastCalledWith(
+			expect.objectContaining({ fileName: 'id1.audio.webm' }),
+			expect.any(Function)
+		);
+		downloader.report('id1', { bytesDone: 5, bytesTotal: 20 });
+		expect(library.live.id1).toEqual({ bytesDone: 35, bytesTotal: 50 });
+		downloader.finish('id1', 20);
+		await flush();
+
+		expect(library.items[0].status).toBe('merging');
+		expect(mux.merges).toEqual([
+			{
+				itemId: 'id1',
+				video: 'id1.video.webm',
+				audio: 'id1.audio.webm',
+				output: 'id1.webm',
+				container: 'webm'
+			}
+		]);
+		mux.finish(48);
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'complete', bytesTotal: 48, bytesDone: 48 });
+		expect(deps.files.remove).toHaveBeenCalledWith('id1.video.webm');
+		expect(deps.files.remove).toHaveBeenCalledWith('id1.audio.webm');
+	});
+
+	it('keeps the parts when merging fails, so a retry only re-merges', async () => {
+		const mux = remuxer();
+		const { library, downloader, deps } = setup({ remuxer: mux.r });
+		await library.addMerged(video, pair);
+		downloader.finish('id1', 30);
+		await flush();
+		downloader.finish('id1', 20);
+		await flush();
+		mux.fail(new Error('ffmpeg exited with 1'));
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'failed', error: 'ffmpeg exited with 1' });
+		expect(deps.files.remove).not.toHaveBeenCalled();
+	});
+
+	it('neither resumes nor removes an item while it merges', async () => {
+		const mux = remuxer();
+		const { library, downloader } = setup({ remuxer: mux.r });
+		await library.addMerged(video, pair);
+		downloader.finish('id1', 30);
+		await flush();
+		downloader.finish('id1', 20);
+		await flush();
+		expect(library.items[0].status).toBe('merging');
+		await library.resume('id1');
+		expect(downloader.start).toHaveBeenCalledTimes(2);
+		await expect(library.remove('id1')).rejects.toThrow(/wait for the merge/i);
+		expect(library.items).toHaveLength(1);
+	});
+
+	it('removing a merged item deletes its parts too', async () => {
+		const { library, deps } = setup({ remuxer: remuxer().r });
+		await library.addMerged(video, pair);
+		await library.remove('id1');
+		expect(
+			(deps.files.remove as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]).sort()
+		).toEqual(['id1.audio.webm', 'id1.video.webm', 'id1.webm']);
+	});
+
+	it('refuses to merge without a remuxer', async () => {
+		const { library } = setup();
+		expect(await library.mergeAvailable()).toBe(false);
+		await expect(library.addMerged(video, pair)).rejects.toThrow(/merging is not available/i);
+	});
+
+	it('asks the remuxer whether this deployment can merge', async () => {
+		const unavailable: Remuxer = { available: async () => false, merge: vi.fn() };
+		expect(await setup({ remuxer: unavailable }).library.mergeAvailable()).toBe(false);
+		expect(await setup({ remuxer: remuxer().r }).library.mergeAvailable()).toBe(true);
 	});
 });

@@ -15,3 +15,12 @@ export async function recordCspViolations(page: Page): Promise<() => Promise<str
 	return () =>
 		page.evaluate(() => (globalThis as unknown as { __cspViolations: string[] }).__cspViolations);
 }
+
+/** CSP / Trusted Types violations inside workers only reach the console. */
+export function recordConsoleCsp(page: Page): string[] {
+	const messages: string[] = [];
+	page.on('console', (message) => {
+		if (/Content Security Policy|Trusted Type/i.test(message.text())) messages.push(message.text());
+	});
+	return messages;
+}

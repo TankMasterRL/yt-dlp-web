@@ -1,20 +1,30 @@
 /**
  * The app's one Library, wired to the browser: IndexedDB, OPFS, the download
- * worker, Web Locks and a BroadcastChannel for other tabs. Browser-only — pages
- * call it from their scripts, never from modules that tests import.
+ * and remux workers, Web Locks and a BroadcastChannel for other tabs.
+ * Browser-only — pages call it from their scripts, never from modules that
+ * tests import.
  */
 import { activeDownloads } from '$lib/download/locks';
 import { workerDownloader } from '$lib/download/client';
 import { relayFetch } from '$lib/relay/client';
+import { workerRemuxer } from '$lib/remux/client';
 import { openLibraryDb, type LibraryDb } from './db';
 import { Library, type FileStore } from './library.svelte';
 
 let library: Library | undefined;
 
-export function getLibrary(relayEndpoint: string): Library {
+/** `relay`: the relay endpoint; `assetsBase`: where ffmpeg/ is served, if it is. */
+export function getLibrary({
+	relay: relayEndpoint,
+	assetsBase
+}: {
+	relay: string;
+	assetsBase: string;
+}): Library {
 	library ??= new Library({
 		db: lazyDb(),
 		downloader: workerDownloader(relayEndpoint),
+		remuxer: workerRemuxer(assetsBase),
 		files: opfsFiles,
 		activeDownloads: () => activeDownloads(),
 		fetchThumbnail: (url) => fetchThumbnail(relayEndpoint, url),

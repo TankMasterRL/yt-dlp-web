@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
 import {
+	bestMergePair,
+	codecName,
 	downloadPlan,
 	formatBytes,
 	formatDuration,
@@ -55,6 +57,22 @@ describe('labels', () => {
 		expect(formatDuration(s)).toBe(label);
 	});
 
+	it.each([
+		['avc1.64001F', 'H.264'],
+		['vp09.00.40.08', 'VP9'],
+		['vp9', 'VP9'],
+		['vp8', 'VP8'],
+		['av01.0.08M.08', 'AV1'],
+		['mp4a.40.2', 'AAC'],
+		['mp4a.40.34', 'MP3'],
+		['opus', 'Opus'],
+		['theora', 'theora'],
+		['none', null],
+		[undefined, null]
+	])('names codec %s as %s', (codec, name) => {
+		expect(codecName(codec)).toBe(name);
+	});
+
 	it('prefers the exact size and marks approximations', () => {
 		expect(sizeOf(f({ filesize: 100, filesize_approx: 90 }))).toEqual({
 			bytes: 100,
@@ -107,5 +125,48 @@ describe('choosing formats', () => {
 			chunkSize: 10485760,
 			expectedBytes: 1234
 		});
+	});
+});
+
+describe('merging split streams', () => {
+	const v = (id: string, ext: string, vcodec = 'vp9') =>
+		f({ format_id: id, ext, vcodec, acodec: 'none', height: 720 });
+	const a = (id: string, ext: string, acodec = 'opus') =>
+		f({ format_id: id, ext, vcodec: 'none', acodec });
+
+	it("picks the best video-only and audio-only streams, like yt-dlp's bv*+ba", () => {
+		const pair = bestMergePair([
+			a('249', 'webm'),
+			v('243', 'webm'),
+			a('251', 'webm'),
+			v('248', 'webm'),
+			f({ format_id: '18' })
+		]);
+		expect(pair).toEqual({
+			video: expect.objectContaining({ format_id: '248' }),
+			audio: expect.objectContaining({ format_id: '251' }),
+			container: 'webm'
+		});
+	});
+
+	it('prefers audio from the same container family, so no re-encoding is ever needed', () => {
+		const pair = bestMergePair([
+			a('140', 'm4a', 'mp4a.40.2'),
+			a('251', 'webm'),
+			v('137', 'mp4', 'avc1.640028')
+		]);
+		expect(pair?.audio.format_id).toBe('140');
+		expect(pair?.container).toBe('mp4');
+	});
+
+	it('falls back to Matroska when the families differ', () => {
+		expect(bestMergePair([a('251', 'webm'), v('137', 'mp4', 'avc1')])?.container).toBe('mkv');
+	});
+
+	it('offers nothing without both halves, or when a half is streaming-only', () => {
+		expect(bestMergePair([v('137', 'mp4'), f({ format_id: '18' })])).toBeNull();
+		expect(
+			bestMergePair([v('137', 'mp4'), { ...a('140', 'm4a'), protocol: 'm3u8_native' }])
+		).toBeNull();
 	});
 });

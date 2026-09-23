@@ -29,6 +29,7 @@ export function progressLabel({ bytesDone, bytesTotal }: DownloadProgress): stri
 
 const STATUS: Record<ItemStatus, string> = {
 	downloading: 'Downloading',
+	merging: 'Merging',
 	paused: 'Paused',
 	complete: 'Downloaded',
 	failed: 'Failed'
