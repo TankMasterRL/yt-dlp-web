@@ -19,7 +19,10 @@ async function engineReady(page: Page) {
 test.describe('extraction in a real browser worker', () => {
 	test.describe.configure({ timeout: 120_000 });
 
-	test('yt-dlp extracts formats through the relay, under the strict CSP', async ({ page, request }) => {
+	test('yt-dlp extracts formats through the relay, under the strict CSP', async ({
+		page,
+		request
+	}) => {
 		const consoleCsp = recordConsoleCsp(page);
 		const violations = await recordCspViolations(page);
 		const workerStarted = page.waitForEvent('worker');
@@ -67,6 +70,8 @@ test.describe('extraction in a real browser worker', () => {
 		await engineReady(page);
 		await page.getByLabel('Video URL').fill('https://example.com/video');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
-		await expect(page.getByRole('alert')).toContainText(/relay refused \(403\): host not on the allowlist/);
+		await expect(page.getByRole('alert')).toContainText(
+			/relay refused \(403\): host not on the allowlist/
+		);
 	});
 });

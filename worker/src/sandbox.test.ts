@@ -10,9 +10,9 @@ import { sandboxCode } from './sandbox';
 
 describe('sandbox module wrapper', () => {
 	it('returns what the program prints', () => {
-		expect(runInSandboxModules('console.log(JSON.stringify({ type: "result", responses: [] }));')).toBe(
-			'{"type":"result","responses":[]}'
-		);
+		expect(
+			runInSandboxModules('console.log(JSON.stringify({ type: "result", responses: [] }));')
+		).toBe('{"type":"result","responses":[]}');
 	});
 
 	it('runs scripts written the way yt-dlp-ejs writes them', () => {
@@ -28,7 +28,9 @@ console.log(JSON.stringify(jsc({ requests: [{ n: 21 }] })));`;
 	});
 
 	it('fails when the program throws', () => {
-		expect(() => runInSandboxModules('throw new Error("player changed");')).toThrow(/player changed/);
+		expect(() => runInSandboxModules('throw new Error("player changed");')).toThrow(
+			/player changed/
+		);
 	});
 
 	it('describes a network-severed isolate with no bindings', () => {

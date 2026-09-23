@@ -30,7 +30,8 @@ function sinkFor(handle: SyncAccessHandle): ByteSink {
 		size: () => handle.getSize(),
 		write(bytes, at) {
 			const written = handle.write(bytes, { at });
-			if (written !== bytes.byteLength) throw new Error(`short write: ${written} of ${bytes.byteLength} bytes`);
+			if (written !== bytes.byteLength)
+				throw new Error(`short write: ${written} of ${bytes.byteLength} bytes`);
 		},
 		truncate: (size) => handle.truncate(size),
 		flush: () => handle.flush()
@@ -47,35 +48,39 @@ serveWorker<DownloadLoad, DownloadWork, { bytesTotal: number } | null, DownloadW
 			return null;
 		}
 		const { itemId, fileName, plan } = work.request;
-		return navigator.locks.request(downloadLockName(itemId), { ifAvailable: true }, async (lock) => {
-			if (!lock) throw new Error('This item is already downloading in another tab');
-			const controller = new AbortController();
-			running.set(itemId, controller);
-			const root = await navigator.storage.getDirectory();
-			const file = await root.getFileHandle(fileName, { create: true });
-			const handle = (await (
-				file as unknown as { createSyncAccessHandle(): Promise<SyncAccessHandle> }
-			).createSyncAccessHandle()) as SyncAccessHandle;
-			let last = 0;
-			try {
-				return await downloadToSink(
-					plan,
-					sinkFor(handle),
-					(request) => relayFetch(relayEndpoint, { ...request, signal: controller.signal }),
-					{
-						signal: controller.signal,
-						onProgress: (p) => {
-							const now = performance.now();
-							if (now - last < PROGRESS_INTERVAL_MS && p.bytesDone !== p.bytesTotal) return;
-							last = now;
-							progress({ itemId, ...p });
+		return navigator.locks.request(
+			downloadLockName(itemId),
+			{ ifAvailable: true },
+			async (lock) => {
+				if (!lock) throw new Error('This item is already downloading in another tab');
+				const controller = new AbortController();
+				running.set(itemId, controller);
+				const root = await navigator.storage.getDirectory();
+				const file = await root.getFileHandle(fileName, { create: true });
+				const handle = (await (
+					file as unknown as { createSyncAccessHandle(): Promise<SyncAccessHandle> }
+				).createSyncAccessHandle()) as SyncAccessHandle;
+				let last = 0;
+				try {
+					return await downloadToSink(
+						plan,
+						sinkFor(handle),
+						(request) => relayFetch(relayEndpoint, { ...request, signal: controller.signal }),
+						{
+							signal: controller.signal,
+							onProgress: (p) => {
+								const now = performance.now();
+								if (now - last < PROGRESS_INTERVAL_MS && p.bytesDone !== p.bytesTotal) return;
+								last = now;
+								progress({ itemId, ...p });
+							}
 						}
-					}
-				);
-			} finally {
-				handle.close();
-				running.delete(itemId);
+					);
+				} finally {
+					handle.close();
+					running.delete(itemId);
+				}
 			}
-		});
+		);
 	}
 });

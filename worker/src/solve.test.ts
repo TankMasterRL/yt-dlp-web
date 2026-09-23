@@ -8,12 +8,20 @@ const APP = 'https://app.example';
 const config: SolveConfig = { allowedOrigins: new Set([APP]), maxProgramBytes: 1024, cpuMs: 5000 };
 const PROGRAM = 'console.log(JSON.stringify({type:"result",responses:[]}))';
 
-function fakeLoader(run: (code: SandboxCode) => Promise<Response> = async () => new Response('{"type":"result"}')) {
-	const load = vi.fn((code: SandboxCode) => ({ getEntrypoint: () => ({ fetch: () => run(code) }) }));
+function fakeLoader(
+	run: (code: SandboxCode) => Promise<Response> = async () => new Response('{"type":"result"}')
+) {
+	const load = vi.fn((code: SandboxCode) => ({
+		getEntrypoint: () => ({ fetch: () => run(code) })
+	}));
 	return { load } satisfies SandboxLoader;
 }
 
-function solve(init: RequestInit & { headers?: Record<string, string> }, loader?: SandboxLoader, limiter?: never) {
+function solve(
+	init: RequestInit & { headers?: Record<string, string> },
+	loader?: SandboxLoader,
+	limiter?: never
+) {
 	return handleSolve(new Request('https://relay.example/solve', init), config, { loader, limiter });
 }
 
@@ -60,7 +68,10 @@ describe('/solve', () => {
 
 	it('requires the X-Solve marker, so a drive-by form post cannot reach the solver', async () => {
 		const loader = fakeLoader();
-		const res = await solve({ method: 'POST', body: PROGRAM, headers: { 'Content-Type': 'text/plain' } }, loader);
+		const res = await solve(
+			{ method: 'POST', body: PROGRAM, headers: { 'Content-Type': 'text/plain' } },
+			loader
+		);
 		expect(res.status).toBe(400);
 		expect(loader.load).not.toHaveBeenCalled();
 	});
@@ -68,7 +79,9 @@ describe('/solve', () => {
 	it('refuses oversized programs, foreign origins and other methods', async () => {
 		const loader = fakeLoader();
 		expect((await solve(post('x'.repeat(2048)), loader)).status).toBe(413);
-		expect((await solve(post(PROGRAM, { Origin: 'https://evil.example' }), loader)).status).toBe(403);
+		expect((await solve(post(PROGRAM, { Origin: 'https://evil.example' }), loader)).status).toBe(
+			403
+		);
 		expect((await solve({ method: 'PUT', body: PROGRAM }, loader)).status).toBe(405);
 		expect(loader.load).not.toHaveBeenCalled();
 	});
@@ -84,10 +97,14 @@ describe('/solve', () => {
 
 	it('rate-limits per client', async () => {
 		const limiter = { limit: vi.fn(async () => ({ success: false })) };
-		const res = await handleSolve(new Request('https://relay.example/solve', post(PROGRAM)), config, {
-			loader: fakeLoader(),
-			limiter
-		});
+		const res = await handleSolve(
+			new Request('https://relay.example/solve', post(PROGRAM)),
+			config,
+			{
+				loader: fakeLoader(),
+				limiter
+			}
+		);
 		expect(res.status).toBe(429);
 	});
 });

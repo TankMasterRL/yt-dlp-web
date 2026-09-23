@@ -16,7 +16,9 @@ test.describe('@live real YouTube via a deployed relay', () => {
 	test.skip(!LIVE_APP_URL, 'set LIVE_APP_URL to a deployed app to run @live tests');
 	test.describe.configure({ timeout: 180_000 });
 
-	test('extracts a real YouTube video, solving its JS challenges in the sandbox', async ({ page }) => {
+	test('extracts a real YouTube video, solving its JS challenges in the sandbox', async ({
+		page
+	}) => {
 		await page.goto(LIVE_APP_URL!);
 		await expect(page.locator('#engine-status')).toHaveAttribute('data-engine-state', 'ready', {
 			timeout: 120_000

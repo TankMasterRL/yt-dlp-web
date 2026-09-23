@@ -60,7 +60,10 @@ export function createSyncSolver(
 }
 
 /** Can this deployment solve? A GET answers 204 or 501; errors count as "no". */
-export async function probeSolver(endpoint: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+export async function probeSolver(
+	endpoint: string,
+	fetchImpl: typeof fetch = fetch
+): Promise<boolean> {
 	try {
 		const response = await fetchImpl(endpoint, { credentials: 'omit', cache: 'no-store' });
 		return response.status === 204;
@@ -90,7 +93,8 @@ export function createSyncTransport(
 			throw new RelayError(`relay unreachable: ${(e as Error).message}`);
 		}
 		const upstreamStatus = xhr.getResponseHeader(RelayHeader.status);
-		if (upstreamStatus === null) throw refusal(xhr.status, xhr.getResponseHeader(RelayHeader.error));
+		if (upstreamStatus === null)
+			throw refusal(xhr.status, xhr.getResponseHeader(RelayHeader.error));
 		return {
 			status: Number(upstreamStatus),
 			headers: decodeHeaderList(xhr.getResponseHeader(RelayHeader.headers)),
@@ -147,5 +151,7 @@ export async function relayFetch(
 }
 
 function refusal(status: number, reason: string | null): RelayError {
-	return new RelayError(reason ? `relay refused (${status}): ${reason}` : `relay responded ${status}`);
+	return new RelayError(
+		reason ? `relay refused (${status}): ${reason}` : `relay responded ${status}`
+	);
 }

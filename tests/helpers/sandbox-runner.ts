@@ -20,7 +20,11 @@ export function runInSandboxModules(program: string): string {
 			join(dir, 'run.js'),
 			`import worker from './main.js';\nprocess.stdout.write(await (await worker.fetch()).text());\n`
 		);
-		return execFileSync(process.execPath, ['run.js'], { cwd: dir, encoding: 'utf8', stdio: 'pipe' });
+		return execFileSync(process.execPath, ['run.js'], {
+			cwd: dir,
+			encoding: 'utf8',
+			stdio: 'pipe'
+		});
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

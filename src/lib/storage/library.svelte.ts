@@ -5,7 +5,13 @@
  */
 import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
 import type { DownloadProgress } from '$lib/download/download';
-import { downloadPlan, formatKind, primaryVideo, resolutionLabel, type DownloadPlan } from '$lib/formats';
+import {
+	downloadPlan,
+	formatKind,
+	primaryVideo,
+	resolutionLabel,
+	type DownloadPlan
+} from '$lib/formats';
 import type { LibraryDb, LibraryItem } from './db';
 
 export interface DownloadRequest {
@@ -16,7 +22,10 @@ export interface DownloadRequest {
 
 export interface Downloader {
 	/** Resolves when the file is complete; rejects with an AbortError when cancelled. */
-	start(request: DownloadRequest, onProgress: (progress: DownloadProgress) => void): Promise<{ bytesTotal: number }>;
+	start(
+		request: DownloadRequest,
+		onProgress: (progress: DownloadProgress) => void
+	): Promise<{ bytesTotal: number }>;
 	cancel(itemId: string): Promise<void>;
 }
 
@@ -101,7 +110,8 @@ export class Library {
 		await this.#save(item);
 		this.items = [item, ...this.items];
 		void this.#run(id);
-		if (video.thumbnail && this.#deps.fetchThumbnail) void this.#attachThumbnail(id, video.thumbnail);
+		if (video.thumbnail && this.#deps.fetchThumbnail)
+			void this.#attachThumbnail(id, video.thumbnail);
 		return item;
 	}
 
@@ -145,7 +155,12 @@ export class Library {
 					this.live[id] = progress;
 				}
 			);
-			Object.assign(item, { status: 'complete', bytesDone: bytesTotal, bytesTotal, completedAt: this.#now() });
+			Object.assign(item, {
+				status: 'complete',
+				bytesDone: bytesTotal,
+				bytesTotal,
+				completedAt: this.#now()
+			});
 		} catch (e) {
 			const progress = this.live[id];
 			if (progress) item.bytesDone = progress.bytesDone;

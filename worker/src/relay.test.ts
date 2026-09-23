@@ -18,7 +18,8 @@ type Upstream = RelayDeps['fetchUpstream'];
 
 function relay(
 	init: { method?: string; url?: string; headers?: Record<string, string>; body?: BodyInit } = {},
-	upstream: Upstream = async () => new Response('hello', { headers: { 'Content-Type': 'text/html' } }),
+	upstream: Upstream = async () =>
+		new Response('hello', { headers: { 'Content-Type': 'text/html' } }),
 	extra: Partial<RelayDeps> = {}
 ) {
 	const headers = new Headers(init.headers);
@@ -71,9 +72,13 @@ describe('request validation', () => {
 
 	it('rate-limits per client', async () => {
 		const limiter = { limit: vi.fn(async () => ({ success: false })) };
-		const { response } = relay({ url: WATCH, headers: { 'CF-Connecting-IP': '203.0.113.9' } }, undefined, {
-			limiter
-		});
+		const { response } = relay(
+			{ url: WATCH, headers: { 'CF-Connecting-IP': '203.0.113.9' } },
+			undefined,
+			{
+				limiter
+			}
+		);
 		expect((await response).status).toBe(429);
 		expect(limiter.limit).toHaveBeenCalledWith({ key: '203.0.113.9' });
 	});
@@ -164,8 +169,10 @@ describe('relayed response', () => {
 		const upstreamHeaders = new Headers({ 'Content-Type': 'text/html', 'X-Custom': 'yes' });
 		upstreamHeaders.append('Set-Cookie', 'a=1; Path=/');
 		upstreamHeaders.append('Set-Cookie', 'b=2; Expires=Wed, 21 Oct 2037 07:28:00 GMT');
-		const res = await relay({ url: WATCH }, async () => new Response('page', { headers: upstreamHeaders }))
-			.response;
+		const res = await relay(
+			{ url: WATCH },
+			async () => new Response('page', { headers: upstreamHeaders })
+		).response;
 		expect(res.status).toBe(200);
 		expect(res.headers.get(RelayHeader.status)).toBe('200');
 		const tunnelled = decodeHeaderList(res.headers.get(RelayHeader.headers));
@@ -194,7 +201,8 @@ describe('relayed response', () => {
 	});
 
 	it('passes 4xx/5xx statuses through', async () => {
-		const res = await relay({ url: WATCH }, async () => new Response('gone', { status: 410 })).response;
+		const res = await relay({ url: WATCH }, async () => new Response('gone', { status: 410 }))
+			.response;
 		expect(res.status).toBe(410);
 		expect(res.headers.get(RelayHeader.status)).toBe('410');
 	});

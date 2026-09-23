@@ -48,7 +48,9 @@
 
 	async function keepDownloads() {
 		persisted = await navigator.storage.persist();
-		if (!persisted) notice = 'The browser declined persistent storage; it may evict downloads when space runs low.';
+		if (!persisted)
+			notice =
+				'The browser declined persistent storage; it may evict downloads when space runs low.';
 	}
 
 	function thumbnailUrl(item: LibraryItem): string | null {
@@ -68,8 +70,11 @@
 	async function save(item: LibraryItem) {
 		const file = await library.file(item.id);
 		const name = exportFileName(item);
-		const picker = (window as { showSaveFilePicker?: (o: { suggestedName: string }) => Promise<FileSystemFileHandle> })
-			.showSaveFilePicker;
+		const picker = (
+			window as {
+				showSaveFilePicker?: (o: { suggestedName: string }) => Promise<FileSystemFileHandle>;
+			}
+		).showSaveFilePicker;
 		if (picker) {
 			try {
 				const handle = await picker({ suggestedName: name });
@@ -146,7 +151,9 @@
 			<li>
 				<article aria-labelledby="title-{item.id}" data-status={item.status}>
 					<div class="thumb" aria-hidden="true">
-						{#if thumb}<img src={thumb} alt="" />{:else}<span>{item.kind === 'audio' ? '♪' : '▶'}</span>{/if}
+						{#if thumb}<img src={thumb} alt="" />{:else}<span
+								>{item.kind === 'audio' ? '♪' : '▶'}</span
+							>{/if}
 					</div>
 					<div class="body">
 						<h2 id="title-{item.id}">{item.title}</h2>
@@ -159,7 +166,10 @@
 						<p class="status">
 							<span class="badge {item.status}">{statusLabel(item.status)}</span>
 							{#if item.status === 'downloading'}
-								{@const progress = live ?? { bytesDone: item.bytesDone, bytesTotal: item.bytesTotal }}
+								{@const progress = live ?? {
+									bytesDone: item.bytesDone,
+									bytesTotal: item.bytesTotal
+								}}
 								{#if progress.bytesTotal}
 									<progress max={progress.bytesTotal} value={progress.bytesDone}></progress>
 								{/if}
@@ -169,24 +179,52 @@
 							{:else if item.status === 'failed'}
 								<span class="error">{item.error}</span>
 							{:else}
-								<span>{progressLabel({ bytesDone: item.bytesDone, bytesTotal: item.bytesTotal })}</span>
+								<span
+									>{progressLabel({ bytesDone: item.bytesDone, bytesTotal: item.bytesTotal })}</span
+								>
 							{/if}
 						</p>
 					</div>
 					<div class="actions">
 						{#if item.status === 'complete'}
-							<button type="button" class="primary" onclick={() => play(item)} aria-label="Play {item.title}">Play</button>
-							<button type="button" onclick={() => save(item)} aria-label="Save {item.title} to disk">Save</button>
+							<button
+								type="button"
+								class="primary"
+								onclick={() => play(item)}
+								aria-label="Play {item.title}">Play</button
+							>
+							<button
+								type="button"
+								onclick={() => save(item)}
+								aria-label="Save {item.title} to disk">Save</button
+							>
 						{:else if item.status === 'downloading'}
-							<button type="button" onclick={() => library.pause(item.id)} aria-label="Pause {item.title}">Pause</button>
+							<button
+								type="button"
+								onclick={() => library.pause(item.id)}
+								aria-label="Pause {item.title}">Pause</button
+							>
 						{:else}
-							<button type="button" onclick={() => library.resume(item.id)} aria-label="Resume {item.title}">Resume</button>
+							<button
+								type="button"
+								onclick={() => library.resume(item.id)}
+								aria-label="Resume {item.title}">Resume</button
+							>
 						{/if}
 						{#if confirmDelete === item.id}
-							<button type="button" class="danger" onclick={() => remove(item)} aria-label="Confirm deleting {item.title}">Confirm delete</button>
+							<button
+								type="button"
+								class="danger"
+								onclick={() => remove(item)}
+								aria-label="Confirm deleting {item.title}">Confirm delete</button
+							>
 							<button type="button" onclick={() => (confirmDelete = null)}>Keep</button>
 						{:else}
-							<button type="button" onclick={() => (confirmDelete = item.id)} aria-label="Delete {item.title}">Delete</button>
+							<button
+								type="button"
+								onclick={() => (confirmDelete = item.id)}
+								aria-label="Delete {item.title}">Delete</button
+							>
 						{/if}
 					</div>
 				</article>
@@ -196,7 +234,9 @@
 		{/each}
 	</ul>
 {:else if library.loaded}
-	<p class="empty">Nothing here yet. <a href={resolve('/')}>Download something</a> and it will appear here.</p>
+	<p class="empty">
+		Nothing here yet. <a href={resolve('/')}>Download something</a> and it will appear here.
+	</p>
 {/if}
 
 {#if playing}

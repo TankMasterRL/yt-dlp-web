@@ -73,6 +73,7 @@ export function parseOrigins(spec: string): Set<string> {
 function positiveInt(value: string | undefined, fallback: number): number {
 	if (value === undefined || value === '') return fallback;
 	const n = Number(value);
-	if (!Number.isInteger(n) || n <= 0) throw new Error(`Expected a positive integer, got "${value}"`);
+	if (!Number.isInteger(n) || n <= 0)
+		throw new Error(`Expected a positive integer, got "${value}"`);
 	return n;
 }

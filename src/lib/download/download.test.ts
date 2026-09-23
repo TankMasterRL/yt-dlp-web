@@ -46,7 +46,11 @@ function server(options: ServerOptions = {}) {
 		if (options.status) return { status: options.status, headers: [], body: null };
 		const range = new Headers(req.headers).get('Range')?.match(/bytes=(\d+)-(\d*)/);
 		if (!range || options.ignoreRange) {
-			return { status: 200, headers: [['content-length', String(BYTES.length)]], body: stream(BYTES, options.piece) };
+			return {
+				status: 200,
+				headers: [['content-length', String(BYTES.length)]],
+				body: stream(BYTES, options.piece)
+			};
 		}
 		const start = Number(range[1]);
 		if (start >= BYTES.length) {
@@ -98,7 +102,9 @@ describe('downloadToSink', () => {
 			'bytes=600-899',
 			'bytes=900-1199'
 		]);
-		expect(calls.every((c) => new Headers(c.headers).get('User-Agent') === 'yt-dlp-web')).toBe(true);
+		expect(calls.every((c) => new Headers(c.headers).get('User-Agent') === 'yt-dlp-web')).toBe(
+			true
+		);
 		expect(progress).toHaveBeenLastCalledWith({ bytesDone: 1000, bytesTotal: 1000 });
 	});
 

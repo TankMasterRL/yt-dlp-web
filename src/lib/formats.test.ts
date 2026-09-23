@@ -12,7 +12,11 @@ import {
 	sizeOf
 } from './formats';
 
-const f = (partial: Partial<FormatInfo>): FormatInfo => ({ format_id: 'x', url: 'https://x/', ...partial });
+const f = (partial: Partial<FormatInfo>): FormatInfo => ({
+	format_id: 'x',
+	url: 'https://x/',
+	...partial
+});
 
 describe('formatKind', () => {
 	it('reads yt-dlp codec conventions', () => {
@@ -52,7 +56,10 @@ describe('labels', () => {
 	});
 
 	it('prefers the exact size and marks approximations', () => {
-		expect(sizeOf(f({ filesize: 100, filesize_approx: 90 }))).toEqual({ bytes: 100, approx: false });
+		expect(sizeOf(f({ filesize: 100, filesize_approx: 90 }))).toEqual({
+			bytes: 100,
+			approx: false
+		});
 		expect(sizeOf(f({ filesize_approx: 90 }))).toEqual({ bytes: 90, approx: true });
 		expect(sizeOf(f({}))).toBeNull();
 	});
@@ -74,7 +81,9 @@ describe('choosing formats', () => {
 
 	it('finds the video in a playlist-shaped result', () => {
 		const video = { id: 'v', title: 'V' } as VideoInfo;
-		expect(primaryVideo({ id: 'p', title: 'P', _type: 'playlist', entries: [video] } as VideoInfo)).toBe(video);
+		expect(
+			primaryVideo({ id: 'p', title: 'P', _type: 'playlist', entries: [video] } as VideoInfo)
+		).toBe(video);
 		expect(primaryVideo(video)).toBe(video);
 	});
 

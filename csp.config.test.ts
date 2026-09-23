@@ -27,8 +27,11 @@ describe('CSP', () => {
 	});
 
 	it('quotes hashes but not schemes or URLs', () => {
-		expect(serializeCsp({ 'style-src-attr': ['unsafe-hashes', 'sha256-abc='], 'img-src': ['self', 'blob:'] })).toBe(
-			"style-src-attr 'unsafe-hashes' 'sha256-abc='; img-src 'self' blob:"
-		);
+		expect(
+			serializeCsp({
+				'style-src-attr': ['unsafe-hashes', 'sha256-abc='],
+				'img-src': ['self', 'blob:']
+			})
+		).toBe("style-src-attr 'unsafe-hashes' 'sha256-abc='; img-src 'self' blob:");
 	});
 });

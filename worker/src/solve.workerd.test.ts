@@ -38,7 +38,9 @@ describe('/solve sandbox in workerd', () => {
 	});
 
 	it('refuses network I/O from the program body', async () => {
-		const res = await solve('const r = await fetch("https://example.com/"); console.log("LEAKED", r.status);');
+		const res = await solve(
+			'const r = await fetch("https://example.com/"); console.log("LEAKED", r.status);'
+		);
 		expect(res.status).toBe(422);
 		expect(await res.text()).not.toContain('LEAKED');
 	});

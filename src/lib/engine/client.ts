@@ -30,7 +30,9 @@ export type EngineProgress =
 
 export type EngineClient = WorkerClient<EngineLoad, EngineRequest, ExtractResult, EngineProgress>;
 
-export function spawnEngine(onProgress: (progress: EngineProgress, id?: number) => void): EngineClient {
+export function spawnEngine(
+	onProgress: (progress: EngineProgress, id?: number) => void
+): EngineClient {
 	const worker = new Worker(trustedWorkerUrl(engineWorkerUrl), {
 		type: 'module',
 		name: 'yt-dlp engine'

@@ -20,7 +20,8 @@ const wheelsPresent = WHEELS.every((w) => existsSync(join(cacheDir, w.file)));
 
 const enc = new TextEncoder();
 const MP4_BYTES = new Uint8Array([
-	0, 0, 0, 24, 102, 116, 121, 112, 109, 112, 52, 50, 0, 0, 0, 0, 109, 112, 52, 50, 105, 115, 111, 109
+	0, 0, 0, 24, 102, 116, 121, 112, 109, 112, 52, 50, 0, 0, 0, 0, 109, 112, 52, 50, 105, 115, 111,
+	109
 ]);
 
 type Fixture = (req: TransportRequest) => TransportResponse;
@@ -97,7 +98,9 @@ describe.skipIf(!wheelsPresent)('yt-dlp in Pyodide (real runtime, real pinned wh
 
 	it('fetched wheels match their pins', async () => {
 		for (const pin of WHEELS) {
-			expect(await sha256Hex(new Uint8Array(await readFile(join(cacheDir, pin.file))))).toBe(pin.sha256);
+			expect(await sha256Hex(new Uint8Array(await readFile(join(cacheDir, pin.file))))).toBe(
+				pin.sha256
+			);
 		}
 	});
 

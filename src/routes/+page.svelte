@@ -66,8 +66,8 @@
 
 <h1>Download</h1>
 <p class="lede">
-	yt-dlp runs right here, in your browser. Only raw bytes pass through the relay; everything
-	you download stays in this browser's private storage.
+	yt-dlp runs right here, in your browser. Only raw bytes pass through the relay; everything you
+	download stays in this browser's private storage.
 </p>
 
 <form onsubmit={submit} aria-describedby="engine-status">
@@ -85,7 +85,11 @@
 			aria-invalid={session.inputError ? 'true' : undefined}
 			aria-describedby={session.inputError ? 'url-error' : undefined}
 		/>
-		<button class="primary" type="submit" disabled={session.busy || session.engineState === 'failed'}>
+		<button
+			class="primary"
+			type="submit"
+			disabled={session.busy || session.engineState === 'failed'}
+		>
 			{session.busy ? 'Fetching…' : 'Fetch formats'}
 		</button>
 	</div>
@@ -148,7 +152,9 @@
 				<li data-status={item.status}>
 					<span class="name">{item.title} <code>[{item.formatId}]</code></span>
 					<span class="state">
-						{statusLabel(item.status)}{#if live} · {progressLabel(live)}{:else if item.status === 'failed'} · {item.error}{/if}
+						{statusLabel(item.status)}{#if live}
+							· {progressLabel(live)}{:else if item.status === 'failed'}
+							· {item.error}{/if}
 					</span>
 				</li>
 			{/each}

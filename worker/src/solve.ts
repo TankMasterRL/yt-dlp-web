@@ -8,7 +8,14 @@
  * itself: the player source arrives inside the program.
  */
 import { RelayHeader } from '../../src/lib/relay/protocol';
-import { INERT_RESPONSE_HEADERS, clientKey, gateOrigin, plainError, preflight, readCapped } from './http';
+import {
+	INERT_RESPONSE_HEADERS,
+	clientKey,
+	gateOrigin,
+	plainError,
+	preflight,
+	readCapped
+} from './http';
 import type { RateLimiter } from './relay';
 import { sandboxCode, type SandboxCode } from './sandbox';
 
@@ -33,7 +40,11 @@ const UNAVAILABLE =
 	'JS challenge solving is not available on this deployment: it needs a Worker Loader binding ' +
 	'(worker_loaders, Workers Paid plan)';
 
-export async function handleSolve(request: Request, config: SolveConfig, deps: SolveDeps): Promise<Response> {
+export async function handleSolve(
+	request: Request,
+	config: SolveConfig,
+	deps: SolveDeps
+): Promise<Response> {
 	const gate = gateOrigin(request, config.allowedOrigins, [RelayHeader.error]);
 	if (!gate.ok) return gate.response;
 	const fail = (status: number, reason: string) => plainError(status, reason, gate.cors);
@@ -43,7 +54,10 @@ export async function handleSolve(request: Request, config: SolveConfig, deps: S
 			return preflight(gate, ['GET', 'POST'], [RelayHeader.solve, 'Content-Type']);
 		case 'GET':
 			return deps.loader
-				? new Response(null, { status: 204, headers: { ...gate.cors, 'Cache-Control': 'no-store' } })
+				? new Response(null, {
+						status: 204,
+						headers: { ...gate.cors, 'Cache-Control': 'no-store' }
+					})
 				: fail(501, UNAVAILABLE);
 		case 'POST':
 			break;
@@ -73,6 +87,10 @@ export async function handleSolve(request: Request, config: SolveConfig, deps: S
 		return fail(422, `solver program failed: ${(e as Error).message}`);
 	}
 	return new Response(output, {
-		headers: { ...INERT_RESPONSE_HEADERS, 'Content-Type': 'text/plain; charset=utf-8', ...gate.cors }
+		headers: {
+			...INERT_RESPONSE_HEADERS,
+			'Content-Type': 'text/plain; charset=utf-8',
+			...gate.cors
+		}
 	});
 }

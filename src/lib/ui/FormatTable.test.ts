@@ -4,10 +4,40 @@ import type { FormatInfo } from '$lib/engine/runtime';
 import FormatTable from './FormatTable.svelte';
 
 const formats: FormatInfo[] = [
-	{ format_id: '140', url: 'https://x/140', ext: 'm4a', vcodec: 'none', acodec: 'mp4a.40.2', filesize: 3_500_000 },
-	{ format_id: '18', url: 'https://x/18', ext: 'mp4', vcodec: 'avc1', acodec: 'mp4a', height: 360, filesize_approx: 9_000_000 },
-	{ format_id: '137', url: 'https://x/137', ext: 'mp4', vcodec: 'avc1.640028', acodec: 'none', height: 1080 },
-	{ format_id: '96', url: 'https://x/96.m3u8', ext: 'mp4', protocol: 'm3u8_native', vcodec: 'avc1', acodec: 'mp4a', height: 1080 }
+	{
+		format_id: '140',
+		url: 'https://x/140',
+		ext: 'm4a',
+		vcodec: 'none',
+		acodec: 'mp4a.40.2',
+		filesize: 3_500_000
+	},
+	{
+		format_id: '18',
+		url: 'https://x/18',
+		ext: 'mp4',
+		vcodec: 'avc1',
+		acodec: 'mp4a',
+		height: 360,
+		filesize_approx: 9_000_000
+	},
+	{
+		format_id: '137',
+		url: 'https://x/137',
+		ext: 'mp4',
+		vcodec: 'avc1.640028',
+		acodec: 'none',
+		height: 1080
+	},
+	{
+		format_id: '96',
+		url: 'https://x/96.m3u8',
+		ext: 'mp4',
+		protocol: 'm3u8_native',
+		vcodec: 'avc1',
+		acodec: 'mp4a',
+		height: 1080
+	}
 ];
 
 describe('FormatTable', () => {

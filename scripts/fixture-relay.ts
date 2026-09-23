@@ -13,7 +13,9 @@ import { handleSolve } from '../worker/src/solve.ts';
 const port = Number(process.env.FIXTURE_RELAY_PORT ?? 4174);
 const config: RelayConfig = {
 	allowedHosts: parseHostPatterns(FIXTURE_HOSTS),
-	allowedOrigins: new Set((process.env.FIXTURE_ALLOWED_ORIGINS ?? 'http://localhost:4173').split(',')),
+	allowedOrigins: new Set(
+		(process.env.FIXTURE_ALLOWED_ORIGINS ?? 'http://localhost:4173').split(',')
+	),
 	maxRequestBodyBytes: 1 << 20,
 	maxBufferedBytes: 32 << 20
 };

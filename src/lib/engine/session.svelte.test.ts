@@ -25,7 +25,9 @@ function fakeEngine(behaviour: {
 			await behaviour.load?.();
 			progress({ kind: 'boot', stage: 'ready' });
 		}),
-		call: vi.fn(async (req: EngineRequest) => (behaviour.call ? behaviour.call(req, progress) : OK)),
+		call: vi.fn(async (req: EngineRequest) =>
+			behaviour.call ? behaviour.call(req, progress) : OK
+		),
 		terminate: vi.fn()
 	};
 	const spawn = vi.fn((onProgress: (p: EngineProgress) => void) => {
@@ -142,10 +144,14 @@ describe('normalizeInput', () => {
 		expect(normalizeInput(input)).toBe(expected);
 	});
 
-	it.each(['', '   ', 'javascript:alert(1)', 'file:///etc/passwd', 'data:text/html,x', 'not a url'])(
-		'rejects %j',
-		(input) => {
-			expect(normalizeInput(input)).toBeNull();
-		}
-	);
+	it.each([
+		'',
+		'   ',
+		'javascript:alert(1)',
+		'file:///etc/passwd',
+		'data:text/html,x',
+		'not a url'
+	])('rejects %j', (input) => {
+		expect(normalizeInput(input)).toBeNull();
+	});
 });

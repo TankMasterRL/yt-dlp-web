@@ -12,7 +12,9 @@ export interface LogLine {
 }
 
 export type EngineHandle = Pick<EngineClient, 'load' | 'call' | 'terminate'>;
-export type SpawnEngine = (onProgress: (progress: EngineProgress, id?: number) => void) => EngineHandle;
+export type SpawnEngine = (
+	onProgress: (progress: EngineProgress, id?: number) => void
+) => EngineHandle;
 export type EngineState = 'idle' | 'booting' | 'ready' | 'failed';
 
 /** A bare YouTube video id, which yt-dlp accepts in place of a URL. */

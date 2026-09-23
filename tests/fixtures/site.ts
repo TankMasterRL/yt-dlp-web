@@ -41,8 +41,14 @@ export const FIXTURES: Record<string, Fixture> = {
 		status: 302,
 		headers: { Location: 'https://www.fixtures.test/watch' }
 	},
-	'https://media.fixtures.test/bbf-360.webm': { headers: { 'Content-Type': 'video/webm' }, body: CLIP_360 },
-	'https://media.fixtures.test/bbf-720.webm': { headers: { 'Content-Type': 'video/webm' }, body: CLIP_720 },
+	'https://media.fixtures.test/bbf-360.webm': {
+		headers: { 'Content-Type': 'video/webm' },
+		body: CLIP_360
+	},
+	'https://media.fixtures.test/bbf-720.webm': {
+		headers: { 'Content-Type': 'video/webm' },
+		body: CLIP_720
+	},
 	// A media host that hands out one-hop redirects, as googlevideo.com sometimes does.
 	'https://redirector.fixtures.test/bbf-360.webm': {
 		status: 302,
@@ -54,7 +60,8 @@ export const FIXTURES: Record<string, Fixture> = {
 export async function fixtureFetch(url: string, init: RequestInit = {}): Promise<Response> {
 	const fixture = FIXTURES[url];
 	if (!fixture) return new Response('fixture not found', { status: 404 });
-	const body = typeof fixture.body === 'string' ? new TextEncoder().encode(fixture.body) : fixture.body;
+	const body =
+		typeof fixture.body === 'string' ? new TextEncoder().encode(fixture.body) : fixture.body;
 	const headers = new Headers(fixture.headers);
 	const range = new Headers(init.headers).get('Range')?.match(/^bytes=(\d+)-(\d*)$/);
 	if (range && body) {
@@ -66,7 +73,10 @@ export async function fixtureFetch(url: string, init: RequestInit = {}): Promise
 		}
 		headers.set('Content-Range', `bytes ${start}-${end}/${body.length}`);
 		headers.set('Content-Length', String(end - start + 1));
-		return new Response(init.method === 'HEAD' ? null : body.slice(start, end + 1), { status: 206, headers });
+		return new Response(init.method === 'HEAD' ? null : body.slice(start, end + 1), {
+			status: 206,
+			headers
+		});
 	}
 	if (body) headers.set('Content-Length', String(body.length));
 	return new Response(init.method === 'HEAD' || !body ? null : body, {

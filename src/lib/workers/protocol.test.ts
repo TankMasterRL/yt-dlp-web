@@ -58,7 +58,10 @@ describe('worker protocol', () => {
 		});
 		await client.load();
 		await client.call('https://example.test/');
-		expect(onProgress).toHaveBeenCalledWith('[generic] https://example.test/: Downloading webpage', 1);
+		expect(onProgress).toHaveBeenCalledWith(
+			'[generic] https://example.test/: Downloading webpage',
+			1
+		);
 	});
 
 	it('rejects only the failing call', async () => {
@@ -83,7 +86,10 @@ describe('worker protocol', () => {
 			}
 		});
 		await client.load();
-		await expect(client.call()).rejects.toMatchObject({ name: 'AbortError', message: 'The operation was aborted.' });
+		await expect(client.call()).rejects.toMatchObject({
+			name: 'AbortError',
+			message: 'The operation was aborted.'
+		});
 	});
 
 	it('makes calls wait for load() instead of racing it', async () => {

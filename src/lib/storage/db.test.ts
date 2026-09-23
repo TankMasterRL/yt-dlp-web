@@ -18,7 +18,14 @@ const item = (id: string, createdAt: number, extra: Partial<LibraryItem> = {}): 
 	bytesDone: 0,
 	status: 'downloading',
 	createdAt,
-	plan: { formatId: '18', url: 'https://m.test/v', ext: 'webm', headers: [], chunkSize: null, expectedBytes: null },
+	plan: {
+		formatId: '18',
+		url: 'https://m.test/v',
+		ext: 'webm',
+		headers: [],
+		chunkSize: null,
+		expectedBytes: null
+	},
 	...extra
 });
 

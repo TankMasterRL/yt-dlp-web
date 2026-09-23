@@ -10,7 +10,8 @@ async function opfsFiles(page: Page): Promise<string[]> {
 	return page.evaluate(async () => {
 		const names: string[] = [];
 		const root = await navigator.storage.getDirectory();
-		for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(name);
+		for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys())
+			names.push(name);
 		return names;
 	});
 }
@@ -35,7 +36,9 @@ test.describe('download → library → play → export → delete', () => {
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
 		await page.getByRole('button', { name: 'Download format 0' }).click();
 		const started = page.getByRole('region', { name: 'Downloads started here' });
-		await expect(started.getByRole('listitem')).toHaveAttribute('data-status', 'complete', { timeout: 30_000 });
+		await expect(started.getByRole('listitem')).toHaveAttribute('data-status', 'complete', {
+			timeout: 30_000
+		});
 
 		// It is in the library, stored in OPFS.
 		await page.getByRole('link', { name: 'Open the library' }).click();
@@ -46,7 +49,9 @@ test.describe('download → library → play → export → delete', () => {
 		// It plays: the browser decodes the stored bytes.
 		await card.getByRole('button', { name: /^Play / }).click();
 		const video = page.getByRole('dialog').locator('video');
-		await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.videoWidth), { timeout: 15_000 }).toBe(640);
+		await expect
+			.poll(() => video.evaluate((v: HTMLVideoElement) => v.videoWidth), { timeout: 15_000 })
+			.toBe(640);
 		await page.getByRole('button', { name: 'Close player' }).click();
 
 		// Export: the saved file is bit-identical to what the "site" served.
@@ -60,7 +65,10 @@ test.describe('download → library → play → export → delete', () => {
 
 		// It survives a reload (IndexedDB metadata, OPFS bytes).
 		await page.reload();
-		await expect(page.getByRole('article', { name: /^Big Buck Fixture/ })).toHaveAttribute('data-status', 'complete');
+		await expect(page.getByRole('article', { name: /^Big Buck Fixture/ })).toHaveAttribute(
+			'data-status',
+			'complete'
+		);
 
 		// Delete asks once, then removes the record and the bytes.
 		await page.getByRole('button', { name: /^Delete Big Buck Fixture/ }).click();

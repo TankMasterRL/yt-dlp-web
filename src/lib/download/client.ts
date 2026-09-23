@@ -9,14 +9,19 @@ export interface DownloadLoad {
 	relayEndpoint: string;
 }
 
-export type DownloadWork = { kind: 'start'; request: DownloadRequest } | { kind: 'cancel'; itemId: string };
+export type DownloadWork =
+	{ kind: 'start'; request: DownloadRequest } | { kind: 'cancel'; itemId: string };
 
 export type DownloadWorkerProgress = { itemId: string } & DownloadProgress;
 
 /** One worker for all downloads, started on first use. */
 export function workerDownloader(relayEndpoint: string): Downloader {
-	let client: WorkerClient<DownloadLoad, DownloadWork, { bytesTotal: number } | null, DownloadWorkerProgress> | null =
-		null;
+	let client: WorkerClient<
+		DownloadLoad,
+		DownloadWork,
+		{ bytesTotal: number } | null,
+		DownloadWorkerProgress
+	> | null = null;
 	const listeners = new Map<string, (progress: DownloadProgress) => void>();
 	const worker = () => {
 		if (!client) {

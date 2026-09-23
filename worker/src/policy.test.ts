@@ -37,7 +37,10 @@ describe('target URL checks (SSRF guard)', () => {
 	const allowed = (url: string) => checkTarget(url, patterns);
 
 	it('accept an allowlisted https URL', () => {
-		expect(allowed('https://www.youtube.com/watch?v=abc')).toEqual({ ok: true, url: expect.any(URL) });
+		expect(allowed('https://www.youtube.com/watch?v=abc')).toEqual({
+			ok: true,
+			url: expect.any(URL)
+		});
 	});
 
 	it.each([

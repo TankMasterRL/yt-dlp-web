@@ -9,7 +9,8 @@
  * id and MUST reject the pending load() — a worker that dies while booting must
  * never leave the UI waiting forever.
  */
-export type ToWorker<L, Q> = { type: 'load'; payload: L } | { type: 'work'; id: number; payload: Q };
+export type ToWorker<L, Q> =
+	{ type: 'load'; payload: L } | { type: 'work'; id: number; payload: Q };
 
 export type FromWorker<R, P> =
 	| { type: 'progress'; id?: number; payload: P }

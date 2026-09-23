@@ -81,7 +81,11 @@ export function headerSafe(reason: string): string {
 		.slice(0, MAX_HEADER_REASON);
 }
 
-export function plainError(status: number, reason: string, extra: Record<string, string> = {}): Response {
+export function plainError(
+	status: number,
+	reason: string,
+	extra: Record<string, string> = {}
+): Response {
 	return new Response(reason, {
 		status,
 		headers: {

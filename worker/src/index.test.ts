@@ -5,7 +5,11 @@ import worker from './index';
 import type { Env } from './config';
 
 const call = (path: string, env: Env, init?: RequestInit) =>
-	worker.fetch(new Request(`https://relay.example${path}`, init) as never, env as never, {} as never);
+	worker.fetch(
+		new Request(`https://relay.example${path}`, init) as never,
+		env as never,
+		{} as never
+	);
 
 describe('worker routing', () => {
 	it('routes /relay to the relay', async () => {

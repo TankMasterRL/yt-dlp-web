@@ -81,13 +81,21 @@ describe('synchronous transport (engine worker)', () => {
 			xhr.response = new TextEncoder().encode('{"ok":1}').buffer as ArrayBuffer;
 			xhr.responseHeaders = {
 				[RelayHeader.status]: '200',
-				[RelayHeader.headers]: encodeHeaderJson([['set-cookie', 'a=1'], ['content-type', 'application/json']])
+				[RelayHeader.headers]: encodeHeaderJson([
+					['set-cookie', 'a=1'],
+					['content-type', 'application/json']
+				])
 			};
 		});
 		const response = createSyncTransport('/relay', Xhr)(request);
 
 		const xhr = instances[0];
-		expect(xhr).toMatchObject({ method: 'POST', url: '/relay', async: false, responseType: 'arraybuffer' });
+		expect(xhr).toMatchObject({
+			method: 'POST',
+			url: '/relay',
+			async: false,
+			responseType: 'arraybuffer'
+		});
 		expect(xhr.timeout).toBe(20000);
 		expect(xhr.requestHeaders[RelayHeader.url]).toBe(request.url);
 		expect(decodeHeaderList(xhr.requestHeaders[RelayHeader.headers])).toEqual(request.headers);
@@ -159,7 +167,9 @@ describe('relayFetch (download worker)', () => {
 			fetchImpl
 		);
 		const init = fetchImpl.mock.calls[0][1]!;
-		expect(new Headers(init.headers).get(RelayHeader.url)).toBe('https://rr1.googlevideo.com/videoplayback');
+		expect(new Headers(init.headers).get(RelayHeader.url)).toBe(
+			'https://rr1.googlevideo.com/videoplayback'
+		);
 		expect(decodeHeaderList(new Headers(init.headers).get(RelayHeader.headers))).toEqual([
 			['Range', 'bytes=0-9']
 		]);
@@ -172,9 +182,9 @@ describe('relayFetch (download worker)', () => {
 	it('throws RelayError when the relay refuses', async () => {
 		const fetchImpl = async () =>
 			new Response('no', { status: 429, headers: { [RelayHeader.error]: 'rate limit exceeded' } });
-		await expect(relayFetch('/relay', { url: 'https://x.googlevideo.com/' }, fetchImpl)).rejects.toThrow(
-			/rate limit/
-		);
+		await expect(
+			relayFetch('/relay', { url: 'https://x.googlevideo.com/' }, fetchImpl)
+		).rejects.toThrow(/rate limit/);
 	});
 });
 
@@ -213,6 +223,8 @@ describe('solver client (engine worker)', () => {
 
 	it('derives the endpoint from the relay URL', () => {
 		expect(solveEndpoint(undefined)).toBe('/solve');
-		expect(solveEndpoint('https://w.example.workers.dev')).toBe('https://w.example.workers.dev/solve');
+		expect(solveEndpoint('https://w.example.workers.dev')).toBe(
+			'https://w.example.workers.dev/solve'
+		);
 	});
 });

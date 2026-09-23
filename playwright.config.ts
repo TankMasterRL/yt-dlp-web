@@ -20,7 +20,8 @@ const projects: Project[] = [
 		}
 	}
 ];
-if (browsers.includes('firefox')) projects.push({ name: 'firefox', use: devices['Desktop Firefox'] });
+if (browsers.includes('firefox'))
+	projects.push({ name: 'firefox', use: devices['Desktop Firefox'] });
 if (browsers.includes('webkit')) projects.push({ name: 'webkit', use: devices['Desktop Safari'] });
 
 export default defineConfig({

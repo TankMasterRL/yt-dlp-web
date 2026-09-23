@@ -48,7 +48,12 @@ export async function downloadToSink(
 	for (;;) {
 		signal?.throwIfAborted();
 		const range = `bytes=${offset}-${offset + chunk - 1}`;
-		const response = await fetchFollowing(url, [...plan.headers, ['Range', range]], fetcher, signal);
+		const response = await fetchFollowing(
+			url,
+			[...plan.headers, ['Range', range]],
+			fetcher,
+			signal
+		);
 		url = response.url;
 		const headers = new Headers(response.headers);
 

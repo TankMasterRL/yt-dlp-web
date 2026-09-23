@@ -72,20 +72,29 @@ describe.skipIf(!wheelsPresent)('YouTube JS challenges through SandboxJCP', () =
 		});
 	});
 
-	const solveN = () => JSON.parse(engine.pyodide.runPython(SOLVE_N)) as {
-		available: string[];
-		results: Record<string, Record<string, string>>;
-	};
+	const solveN = () =>
+		JSON.parse(engine.pyodide.runPython(SOLVE_N)) as {
+			available: string[];
+			results: Record<string, Record<string, string>>;
+		};
 
 	it("is the only available provider, so yt-dlp's director picks it", () => {
-		respond = () => JSON.stringify({ type: 'result', responses: [{ type: 'result', data: { abcdefgh: 'SOLVED-n' } }] });
+		respond = () =>
+			JSON.stringify({
+				type: 'result',
+				responses: [{ type: 'result', data: { abcdefgh: 'SOLVED-n' } }]
+			});
 		expect(solveN().available).toEqual(['Sandbox']);
 	});
 
 	it('downloads the player through the transport and ships the real EJS solver with it', () => {
 		programs.length = 0;
 		fetched.length = 0;
-		respond = () => JSON.stringify({ type: 'result', responses: [{ type: 'result', data: { abcdefgh: 'SOLVED-n' } }] });
+		respond = () =>
+			JSON.stringify({
+				type: 'result',
+				responses: [{ type: 'result', data: { abcdefgh: 'SOLVED-n' } }]
+			});
 		solveN();
 		expect(fetched.map((r) => r.url)).toContain(PLAYER_URL);
 		expect(programs).toHaveLength(1);
@@ -98,7 +107,11 @@ describe.skipIf(!wheelsPresent)('YouTube JS challenges through SandboxJCP', () =
 	});
 
 	it('hands valid solver output back to yt-dlp as solved challenges', () => {
-		respond = () => JSON.stringify({ type: 'result', responses: [{ type: 'result', data: { abcdefgh: 'SOLVED-n' } }] });
+		respond = () =>
+			JSON.stringify({
+				type: 'result',
+				responses: [{ type: 'result', data: { abcdefgh: 'SOLVED-n' } }]
+			});
 		expect(solveN().results).toEqual({ n: { abcdefgh: 'SOLVED-n' } });
 	});
 

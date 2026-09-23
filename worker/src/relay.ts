@@ -40,7 +40,12 @@ export interface RelayDeps {
 
 const METHODS = new Set(['GET', 'HEAD', 'POST']);
 const ALLOW_HEADERS = [RelayHeader.url, RelayHeader.headers, RelayHeader.maxBytes, 'Content-Type'];
-const EXPOSE_HEADERS = [RelayHeader.status, RelayHeader.headers, RelayHeader.truncated, RelayHeader.error];
+const EXPOSE_HEADERS = [
+	RelayHeader.status,
+	RelayHeader.headers,
+	RelayHeader.truncated,
+	RelayHeader.error
+];
 
 /** Never forwarded upstream: hop-by-hop, routing, and client-identity headers. */
 const DROPPED_REQUEST_HEADERS = new Set([

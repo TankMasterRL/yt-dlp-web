@@ -55,10 +55,29 @@ for (const [name, width, height] of [
 	const target = join(OUT, `${name}.webm`);
 	const run = spawnSync(
 		ffmpeg,
-		['-y', '-f', 'image2pipe', '-framerate', '12', '-c:v', 'mjpeg', '-i', 'pipe:0', '-c:v', 'libvpx', '-b:v', '120k', '-an', '-f', 'webm', target],
+		[
+			'-y',
+			'-f',
+			'image2pipe',
+			'-framerate',
+			'12',
+			'-c:v',
+			'mjpeg',
+			'-i',
+			'pipe:0',
+			'-c:v',
+			'libvpx',
+			'-b:v',
+			'120k',
+			'-an',
+			'-f',
+			'webm',
+			target
+		],
 		{ input: jpegs }
 	);
-	if (run.status !== 0) throw new Error(`ffmpeg failed for ${name}: ${run.stderr.toString().slice(-800)}`);
+	if (run.status !== 0)
+		throw new Error(`ffmpeg failed for ${name}: ${run.stderr.toString().slice(-800)}`);
 	console.log(`✓ ${target}`);
 }
 await browser.close();

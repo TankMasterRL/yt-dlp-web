@@ -7,21 +7,39 @@ import { Library, type Downloader, type LibraryDeps } from './library.svelte';
 function memoryDb(initial: LibraryItem[] = []): LibraryDb {
 	const rows = new Map(initial.map((i) => [i.id, structuredClone(i)]));
 	return {
-		all: async () => [...rows.values()].sort((a, b) => b.createdAt - a.createdAt).map((i) => structuredClone(i)),
+		all: async () =>
+			[...rows.values()].sort((a, b) => b.createdAt - a.createdAt).map((i) => structuredClone(i)),
 		get: async (id) => structuredClone(rows.get(id)),
-		put: async (item) => void rows.set(item.id, structuredClone($state.snapshot(item) as LibraryItem)),
+		put: async (item) =>
+			void rows.set(item.id, structuredClone($state.snapshot(item) as LibraryItem)),
 		delete: async (id) => void rows.delete(id)
 	};
 }
 
 /** A downloader whose downloads finish only when the test says so. */
 function controllableDownloader() {
-	const running = new Map<string, { resolve: (total: number) => void; reject: (e: Error) => void; progress: (p: DownloadProgress) => void }>();
-	const downloader: Downloader & { finish(id: string, total: number): void; fail(id: string, e: Error): void; report(id: string, p: DownloadProgress): void } = {
-		start: vi.fn((request, onProgress) =>
-			new Promise<{ bytesTotal: number }>((resolve, reject) => {
-				running.set(request.itemId, { resolve: (bytesTotal) => resolve({ bytesTotal }), reject, progress: onProgress });
-			})
+	const running = new Map<
+		string,
+		{
+			resolve: (total: number) => void;
+			reject: (e: Error) => void;
+			progress: (p: DownloadProgress) => void;
+		}
+	>();
+	const downloader: Downloader & {
+		finish(id: string, total: number): void;
+		fail(id: string, e: Error): void;
+		report(id: string, p: DownloadProgress): void;
+	} = {
+		start: vi.fn(
+			(request, onProgress) =>
+				new Promise<{ bytesTotal: number }>((resolve, reject) => {
+					running.set(request.itemId, {
+						resolve: (bytesTotal) => resolve({ bytesTotal }),
+						reject,
+						progress: onProgress
+					});
+				})
 		),
 		cancel: vi.fn(async (itemId: string) => {
 			running.get(itemId)?.reject(new DOMException('aborted', 'AbortError'));
@@ -57,14 +75,21 @@ function setup(overrides: Partial<LibraryDeps> = {}) {
 	const deps: LibraryDeps = {
 		db: memoryDb(),
 		downloader: controllableDownloader(),
-		files: { get: vi.fn(async (name: string) => new File(['x'], name)), remove: vi.fn(async () => {}) },
+		files: {
+			get: vi.fn(async (name: string) => new File(['x'], name)),
+			remove: vi.fn(async () => {})
+		},
 		activeDownloads: async () => new Set(),
 		fetchThumbnail: vi.fn(async () => new Blob(['jpg'], { type: 'image/jpeg' })),
 		now: () => 1000 + n,
 		newId: () => `id${++n}`,
 		...overrides
 	};
-	return { library: new Library(deps), deps, downloader: deps.downloader as ReturnType<typeof controllableDownloader> };
+	return {
+		library: new Library(deps),
+		deps,
+		downloader: deps.downloader as ReturnType<typeof controllableDownloader>
+	};
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -83,7 +108,11 @@ describe('Library', () => {
 			status: 'downloading'
 		});
 		expect(downloader.start).toHaveBeenCalledWith(
-			expect.objectContaining({ itemId: 'id1', fileName: 'id1.webm', plan: expect.objectContaining({ url: format.url, headers: [['User-Agent', 'UA']] }) }),
+			expect.objectContaining({
+				itemId: 'id1',
+				fileName: 'id1.webm',
+				plan: expect.objectContaining({ url: format.url, headers: [['User-Agent', 'UA']] })
+			}),
 			expect.any(Function)
 		);
 
@@ -123,7 +152,10 @@ describe('Library', () => {
 		await library.add(video, format);
 		downloader.fail('id1', new Error('HTTP 403 — the media link has probably expired'));
 		await flush();
-		expect(library.items[0]).toMatchObject({ status: 'failed', error: expect.stringMatching(/expired/) });
+		expect(library.items[0]).toMatchObject({
+			status: 'failed',
+			error: expect.stringMatching(/expired/)
+		});
 	});
 
 	it('removes an item: stops it, deletes its file and its record', async () => {
@@ -137,7 +169,27 @@ describe('Library', () => {
 	});
 
 	it('on load, marks downloads orphaned by a closed tab as paused — but not ones another tab runs', async () => {
-		const base = { sourceUrl: 's', videoId: 'v', extractor: 'e', title: 't', formatId: 'f', ext: 'webm', kind: 'av' as const, resolution: '—', bytesTotal: null, bytesDone: 5, createdAt: 1, plan: { formatId: 'f', url: 'u', ext: 'webm', headers: [], chunkSize: null, expectedBytes: null } };
+		const base = {
+			sourceUrl: 's',
+			videoId: 'v',
+			extractor: 'e',
+			title: 't',
+			formatId: 'f',
+			ext: 'webm',
+			kind: 'av' as const,
+			resolution: '—',
+			bytesTotal: null,
+			bytesDone: 5,
+			createdAt: 1,
+			plan: {
+				formatId: 'f',
+				url: 'u',
+				ext: 'webm',
+				headers: [],
+				chunkSize: null,
+				expectedBytes: null
+			}
+		};
 		const db = memoryDb([
 			{ ...base, id: 'orphan', fileName: 'orphan.webm', status: 'downloading' },
 			{ ...base, id: 'elsewhere', fileName: 'elsewhere.webm', status: 'downloading', createdAt: 2 }
@@ -160,11 +212,37 @@ describe('Library', () => {
 
 	it('reloads when another tab changes the library', async () => {
 		const listeners: ((e: MessageEvent) => void)[] = [];
-		const channel = { postMessage: vi.fn(), addEventListener: (_: 'message', l: (e: MessageEvent) => void) => listeners.push(l) };
+		const channel = {
+			postMessage: vi.fn(),
+			addEventListener: (_: 'message', l: (e: MessageEvent) => void) => listeners.push(l)
+		};
 		const db = memoryDb();
 		const { library } = setup({ db, channel });
 		await library.load();
-		await db.put({ id: 'x', sourceUrl: 's', videoId: 'v', extractor: 'e', title: 'From another tab', formatId: 'f', ext: 'webm', kind: 'av', resolution: '—', fileName: 'x.webm', bytesTotal: 1, bytesDone: 1, status: 'complete', createdAt: 5, plan: { formatId: 'f', url: 'u', ext: 'webm', headers: [], chunkSize: null, expectedBytes: null } });
+		await db.put({
+			id: 'x',
+			sourceUrl: 's',
+			videoId: 'v',
+			extractor: 'e',
+			title: 'From another tab',
+			formatId: 'f',
+			ext: 'webm',
+			kind: 'av',
+			resolution: '—',
+			fileName: 'x.webm',
+			bytesTotal: 1,
+			bytesDone: 1,
+			status: 'complete',
+			createdAt: 5,
+			plan: {
+				formatId: 'f',
+				url: 'u',
+				ext: 'webm',
+				headers: [],
+				chunkSize: null,
+				expectedBytes: null
+			}
+		});
 		listeners.forEach((l) => l(new MessageEvent('message', { data: 'changed' })));
 		await flush();
 		expect(library.items.map((i) => i.title)).toEqual(['From another tab']);
