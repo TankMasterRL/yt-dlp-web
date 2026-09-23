@@ -33,6 +33,20 @@ export function getLibrary({
 	return library;
 }
 
+/**
+ * Whether this browser gives the app an origin-private file system here.
+ * Without one, downloads cannot be kept: private windows may refuse it
+ * (Firefox rejects getDirectory()), and some engines lack the API entirely.
+ */
+export async function opfsAvailable(): Promise<boolean> {
+	try {
+		await navigator.storage.getDirectory();
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function lazyDb(): LibraryDb {
 	let db: Promise<LibraryDb> | undefined;
 	const open = () => (db ??= openLibraryDb());

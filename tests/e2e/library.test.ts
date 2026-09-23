@@ -1,23 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, opfsFiles } from './app';
 import { recordCspViolations } from './csp';
 
 const FIXTURE = readFileSync(new URL('../fixtures/media/bbf-360.webm', import.meta.url));
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
-async function opfsFiles(page: Page): Promise<string[]> {
-	return page.evaluate(async () => {
-		const names: string[] = [];
-		const root = await navigator.storage.getDirectory();
-		for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys())
-			names.push(name);
-		return names;
-	});
-}
-
 test.describe('download → library → play → export → delete', () => {
-	test.describe.configure({ timeout: 150_000 });
+	test.describe.configure({ timeout: ENGINE_BOOT_MS + EXTRACTION_MS + 120_000 });
 
 	test('a download survives the whole journey byte for byte', async ({ page }) => {
 		// Exercise the plain-download export path (showSaveFilePicker opens a
@@ -29,12 +20,11 @@ test.describe('download → library → play → export → delete', () => {
 
 		// Extract the fake page and download its 360p format.
 		await page.goto('/');
-		await expect(page.locator('#engine-status')).toHaveAttribute('data-engine-state', 'ready', {
-			timeout: 90_000
-		});
+		test.skip(!(await hasOpfs(page)), NO_OPFS);
+		await engineReady(page);
 		await page.getByLabel('Video URL').fill('https://www.fixtures.test/watch');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
-		await page.getByRole('button', { name: 'Download format 0' }).click();
+		await page.getByRole('button', { name: 'Download format 0' }).click({ timeout: EXTRACTION_MS });
 		const started = page.getByRole('region', { name: 'Downloads started here' });
 		await expect(started.getByRole('listitem')).toHaveAttribute('data-status', 'complete', {
 			timeout: 30_000
@@ -78,5 +68,26 @@ test.describe('download → library → play → export → delete', () => {
 		expect(await opfsFiles(page)).toEqual([]);
 
 		expect(await violations()).toEqual([]);
+	});
+});
+
+test('without private file storage, the page says so and offers nothing to download', async ({
+	page
+}) => {
+	test.setTimeout(ENGINE_BOOT_MS + EXTRACTION_MS);
+	// As in a private window that refuses OPFS (or an engine without it).
+	await page.addInitScript(() => {
+		const storage = globalThis.StorageManager?.prototype as { getDirectory?: unknown } | undefined;
+		if (storage)
+			storage.getDirectory = () => Promise.reject(new DOMException('denied', 'SecurityError'));
+	});
+	await page.goto('/');
+	await expect(page.locator('[data-storage="unavailable"]')).toBeVisible();
+	await engineReady(page);
+	await page.getByLabel('Video URL').fill('https://www.fixtures.test/watch');
+	await page.getByRole('button', { name: 'Fetch formats' }).click();
+	// Formats are still listed; nothing can be started.
+	await expect(page.getByRole('button', { name: 'Download format 0' })).toBeDisabled({
+		timeout: EXTRACTION_MS
 	});
 });

@@ -58,6 +58,10 @@ export default defineConfig({
 				test: {
 					name: 'node',
 					environment: 'node',
+					// Not inherited (this project does not `extends: true`): the real
+					// Pyodide, ffmpeg.wasm and workerd boots need far more than the 10 s default.
+					testTimeout: 60_000,
+					hookTimeout: 120_000,
 					include: [
 						'src/**/*.integration.test.ts',
 						'worker/**/*.test.ts',

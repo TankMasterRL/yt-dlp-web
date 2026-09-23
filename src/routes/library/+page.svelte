@@ -41,6 +41,8 @@
 	});
 
 	async function refreshStorage() {
+		// Some engines and private windows offer no storage manager at all.
+		if (!navigator.storage) return;
 		const estimate = await navigator.storage.estimate();
 		storage = { usage: estimate.usage ?? 0, quota: estimate.quota ?? 0 };
 		persisted = await navigator.storage.persisted();

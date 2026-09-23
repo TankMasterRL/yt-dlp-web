@@ -15,7 +15,7 @@
 		resolutionLabel,
 		sizeOf
 	} from '$lib/formats';
-	import { getLibrary } from '$lib/storage/instance';
+	import { getLibrary, opfsAvailable } from '$lib/storage/instance';
 	import { progressLabel, statusLabel } from '$lib/storage/present';
 	import FormatTable from '$lib/ui/FormatTable.svelte';
 
@@ -29,6 +29,8 @@
 	const library = getLibrary(endpoints);
 	/** Whether this deployment ships ffmpeg.wasm; null until asked. */
 	let canMerge = $state<boolean | null>(null);
+	/** Whether this browser lets the app keep files (OPFS); null until asked. */
+	let canStore = $state<boolean | null>(null);
 	/** Library item ids started from this page, newest first. */
 	let started = $state<string[]>([]);
 	const startedItems = $derived(
@@ -50,6 +52,7 @@
 	onMount(() => {
 		session.boot().catch(() => {});
 		void library.mergeAvailable().then((available) => (canMerge = available));
+		void opfsAvailable().then((available) => (canStore = available));
 		return () => session.dispose();
 	});
 
@@ -132,6 +135,12 @@
 >
 	{engineStatus}
 </p>
+{#if canStore === false}
+	<p class="status note" data-storage="unavailable">
+		This browser gives the page no private file storage here — private windows often don't — so
+		downloads can't be kept. You can still look up formats.
+	</p>
+{/if}
 {#if session.solverAvailable === false}
 	<p class="status note" data-solver="unavailable">
 		This relay cannot solve YouTube's JavaScript challenges (it needs a Worker Loader binding), so
@@ -173,7 +182,9 @@
 							({mergeSize.approx ? '≈ ' : ''}{formatBytes(mergeSize.bytes)}){/if}.
 					</p>
 				</div>
-				{#if canMerge}
+				{#if canStore === false}
+					<!-- Nothing can be kept here; the storage note above says why. -->
+				{:else if canMerge}
 					<button class="primary" type="button" onclick={downloadMerged}
 						>Download best quality</button
 					>
@@ -190,7 +201,12 @@
 			</section>
 		{/if}
 		{#if video.formats?.length}
-			<FormatTable formats={video.formats} recommended={video.format_id} onDownload={download} />
+			<FormatTable
+				formats={video.formats}
+				recommended={video.format_id}
+				onDownload={download}
+				disabled={canStore === false}
+			/>
 		{:else}
 			<p>No downloadable formats were found.</p>
 		{/if}

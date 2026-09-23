@@ -1,18 +1,21 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, opfsFiles } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
 
-async function opfsFiles(page: Page): Promise<string[]> {
-	return page.evaluate(async () => {
-		const names: string[] = [];
-		const root = await navigator.storage.getDirectory();
-		for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys())
-			names.push(name);
-		return names;
-	});
+/** Whether a media element has sound, asked in each engine's own terms. */
+function hasAudio(element: HTMLVideoElement): boolean {
+	const media = element as HTMLVideoElement & {
+		mozHasAudio?: boolean;
+		audioTracks?: { length: number };
+		webkitAudioDecodedByteCount?: number;
+	};
+	if (media.mozHasAudio !== undefined) return media.mozHasAudio; // Firefox
+	if (media.audioTracks) return media.audioTracks.length > 0; // WebKit
+	return (media.webkitAudioDecodedByteCount ?? 0) > 0; // Chromium, once decoding runs
 }
 
 test.describe('merging separate video and audio with ffmpeg.wasm', () => {
-	test.describe.configure({ timeout: 180_000 });
+	test.describe.configure({ timeout: ENGINE_BOOT_MS + EXTRACTION_MS + 120_000 });
 
 	test('downloads both streams and remuxes them into one playable file, under the strict CSP', async ({
 		page,
@@ -27,15 +30,16 @@ test.describe('merging separate video and audio with ffmpeg.wasm', () => {
 		});
 
 		await page.goto('/');
-		await expect(page.locator('#engine-status')).toHaveAttribute('data-engine-state', 'ready', {
-			timeout: 90_000
-		});
+		test.skip(!(await hasOpfs(page)), NO_OPFS);
+		await engineReady(page);
 		await page.getByLabel('Video URL').fill('https://www.fixtures.test/split');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
 
 		// The page offers yt-dlp's bv*+ba: the video-only and audio-only streams, merged.
 		const best = page.getByRole('region', { name: /^Best quality/ });
-		await expect(best).toContainText('VP8 video + Opus audio, merged into one WEBM file');
+		await expect(best).toContainText('VP8 video + Opus audio, merged into one WEBM file', {
+			timeout: EXTRACTION_MS
+		});
 		// Until a merge starts, only a HEAD probe has asked about ffmpeg.wasm.
 		expect(ffmpegRequests).toEqual(['HEAD /ffmpeg/ffmpeg-core.wasm']);
 
@@ -56,9 +60,9 @@ test.describe('merging separate video and audio with ffmpeg.wasm', () => {
 		await expect(started.getByRole('listitem')).toHaveAttribute('data-status', 'complete', {
 			timeout: 60_000
 		});
-		expect(ffmpegRequests).toEqual(
-			expect.arrayContaining(['GET /ffmpeg/ffmpeg-core.js', 'GET /ffmpeg/ffmpeg-core.wasm'])
-		);
+		// Now the core has been fetched. (The worker's import() of ffmpeg-core.js is
+		// not reported as a request in every browser; its wasm fetch is.)
+		expect(ffmpegRequests).toContain('GET /ffmpeg/ffmpeg-core.wasm');
 
 		// One library item, one OPFS file: the parts are gone once merged.
 		await page.getByRole('link', { name: 'Open the library' }).click();
@@ -87,17 +91,7 @@ test.describe('merging separate video and audio with ffmpeg.wasm', () => {
 			v.muted = true;
 			return v.play();
 		});
-		await expect
-			.poll(
-				() =>
-					video.evaluate(
-						(v: HTMLVideoElement) =>
-							(v as HTMLVideoElement & { webkitAudioDecodedByteCount: number })
-								.webkitAudioDecodedByteCount
-					),
-				{ timeout: 15_000 }
-			)
-			.toBeGreaterThan(0);
+		await expect.poll(() => video.evaluate(hasAudio), { timeout: 15_000 }).toBe(true);
 
 		expect(await violations()).toEqual([]);
 		expect(consoleCsp).toEqual([]);

@@ -12,6 +12,18 @@ import { serveWorker } from '$lib/workers/protocol';
 
 let engine: Engine | undefined;
 
+// Pyodide tells classic workers from module workers by calling
+// importScripts('data:…'), which throws in a module worker either way. WebKit
+// checks Trusted Types first, so under this worker's CSP (trusted-types 'none')
+// the probe is also reported as a violation. Fail it the same way, without
+// reaching the sink: module workers never load classic scripts.
+Object.defineProperty(globalThis, 'importScripts', {
+	configurable: true,
+	value: () => {
+		throw new TypeError('Module scripts do not support importScripts().');
+	}
+});
+
 serveWorker<EngineLoad, EngineRequest, ExtractResult, EngineProgress>({
 	async load({ assetsBase, relayEndpoint, solveEndpoint }, progress) {
 		// Probed once: SandboxJCP.is_available() must not touch the network, and

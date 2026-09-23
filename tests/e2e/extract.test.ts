@@ -1,14 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { ENGINE_BOOT_MS, EXTRACTION_MS, engineReady } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
 
-async function engineReady(page: Page) {
-	await expect(page.locator('#engine-status')).toHaveAttribute('data-engine-state', 'ready', {
-		timeout: 90_000
-	});
-}
-
 test.describe('extraction in a real browser worker', () => {
-	test.describe.configure({ timeout: 120_000 });
+	test.describe.configure({ timeout: ENGINE_BOOT_MS + 2 * EXTRACTION_MS });
 
 	test('yt-dlp extracts formats through the relay, under the strict CSP', async ({
 		page,
@@ -36,7 +31,9 @@ test.describe('extraction in a real browser worker', () => {
 		await page.getByLabel('Video URL').fill('https://www.fixtures.test/watch');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
 
-		await expect(page.getByRole('heading', { level: 2 })).toHaveText(/^Big Buck Fixture/);
+		await expect(page.getByRole('heading', { level: 2 })).toHaveText(/^Big Buck Fixture/, {
+			timeout: EXTRACTION_MS
+		});
 		// Header row + one row per <source>.
 		await expect(page.getByRole('row')).toHaveCount(3);
 		await expect(page.getByText('recommended')).toBeVisible();
@@ -53,7 +50,9 @@ test.describe('extraction in a real browser worker', () => {
 		await engineReady(page);
 		await page.getByLabel('Video URL').fill('https://www.fixtures.test/moved');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
-		await expect(page.getByRole('heading', { level: 2 })).toHaveText(/^Big Buck Fixture/);
+		await expect(page.getByRole('heading', { level: 2 })).toHaveText(/^Big Buck Fixture/, {
+			timeout: EXTRACTION_MS
+		});
 	});
 
 	test('reports a host the relay refuses', async ({ page }) => {
@@ -62,7 +61,8 @@ test.describe('extraction in a real browser worker', () => {
 		await page.getByLabel('Video URL').fill('https://example.com/video');
 		await page.getByRole('button', { name: 'Fetch formats' }).click();
 		await expect(page.getByRole('alert')).toContainText(
-			/relay refused \(403\): host not on the allowlist/
+			/relay refused \(403\): host not on the allowlist/,
+			{ timeout: EXTRACTION_MS }
 		);
 	});
 });
