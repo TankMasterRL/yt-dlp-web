@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 /**
  * Real YouTube, through a DEPLOYED app and relay Worker — the only test that

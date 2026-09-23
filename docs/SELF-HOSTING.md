@@ -83,9 +83,18 @@ the origin of the `VITE_RELAY_URL` you built with. `SITE_ROOT` overrides where `
 
 ### GitHub Pages
 
-Build with `BASE_PATH=/<repository>` and publish `build/`. It includes `.nojekyll`, so Jekyll leaves
-`_app/` alone. GitHub Pages cannot send headers, and all project sites of an account share one
-origin: see `docs/SECURITY.md`.
+`.github/workflows/pages.yml` deploys every commit on `main` that CI passed:
+
+1. **Settings → Pages → Source: GitHub Actions.**
+2. **Settings → Secrets and variables → Actions → Variables:** add `RELAY_URL`, your relay's URL.
+3. In `worker/wrangler.jsonc`, `ALLOWED_ORIGINS` must include `https://<owner>.github.io` (a custom
+   domain's origin instead, if you use one). Then redeploy the Worker.
+
+The workflow builds with the base path GitHub Pages reports (`/<repository>`, or none on a custom
+domain) and `VITE_RELAY_URL=$RELAY_URL`. It fails with a clear message if `RELAY_URL` is not set.
+
+GitHub Pages cannot send headers, and all project sites of an account share one origin: see
+`docs/SECURITY.md`.
 
 ### All-in-one: the Worker serves the app too
 

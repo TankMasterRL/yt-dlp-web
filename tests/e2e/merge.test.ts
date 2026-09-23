@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, opfsFiles } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
 
@@ -40,6 +40,7 @@ test.describe('merging separate video and audio with ffmpeg.wasm', () => {
 		await expect(best).toContainText('VP8 video + Opus audio, merged into one WEBM file', {
 			timeout: EXTRACTION_MS
 		});
+		await expect(best).toContainText(/never re-encoded \(\d+(\.\d+)? KiB\)\./);
 		// Until a merge starts, only a HEAD probe has asked about ffmpeg.wasm.
 		expect(ffmpegRequests).toEqual(['HEAD /ffmpeg/ffmpeg-core.wasm']);
 

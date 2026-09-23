@@ -1,7 +1,9 @@
-# Hermetic test runner: type-check (svelte-check), unit/integration tests
-# (Vitest, including the real-Pyodide + real-wheel yt-dlp integration test — the
-# pinned wheels are fetched and hash-verified at image build time; no wheels live
-# in the repo), and the Playwright e2e suite on Chromium, Firefox and WebKit.
+# The CI gate, runnable anywhere (`bun run test:docker`): formatting, the
+# dependency audit, type-check (svelte-check + tsc), unit/integration tests
+# (Vitest, including real Pyodide with the real pinned wheels — fetched and
+# hash-verified at image build time; no wheels live in the repo — real
+# ffmpeg.wasm and real workerd), and the Playwright e2e suite on Chromium,
+# Firefox and WebKit.
 #
 # The base image version MUST match the @playwright/test version in bun.lock —
 # the image ships the exact browser builds that library version expects, so no
@@ -32,4 +34,4 @@ ENV E2E_BROWSERS=chromium,firefox,webkit
 # The e2e webServer builds the app and serves it on :4173 internally, so this
 # needs no network beyond what the tests stub. Run with --ipc=host: Chromium can
 # exhaust a container's default /dev/shm.
-CMD ["bash", "-c", "bun run check && bun run test && bun run test:e2e"]
+CMD ["bash", "-c", "bun run format:check && bun run audit && bun run check && bun run test && bun run test:e2e"]

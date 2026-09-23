@@ -24,6 +24,21 @@ if (browsers.includes('firefox'))
 	projects.push({ name: 'firefox', use: devices['Desktop Firefox'] });
 if (browsers.includes('webkit')) projects.push({ name: 'webkit', use: devices['Desktop Safari'] });
 
+// BrowserOS, a Chromium fork: developers' machines only, never CI. `bun run
+// test:browseros` (which sets BROWSEROS=1) launches BROWSEROS_PATH, or attaches
+// to a running instance at BROWSEROS_CDP_URL (tests/e2e/fixtures.ts); with
+// neither, its tests skip.
+const browserOSPath = process.env.BROWSEROS_PATH;
+if (process.env.BROWSEROS || browserOSPath || process.env.BROWSEROS_CDP_URL) {
+	projects.push({
+		name: 'browseros',
+		use: {
+			...devices['Desktop Chrome'],
+			launchOptions: browserOSPath ? { executablePath: browserOSPath } : {}
+		}
+	});
+}
+
 export default defineConfig({
 	testDir: 'tests/e2e',
 	// @live tests hit real YouTube through a deployed app; run them with LIVE_APP_URL set.
@@ -34,7 +49,12 @@ export default defineConfig({
 	reporter: process.env.CI ? 'list' : 'html',
 	use: {
 		baseURL: 'http://localhost:4173',
-		trace: 'on-first-retry'
+		// Nothing waits forever: a stuck step fails as itself, not as the test's timeout.
+		actionTimeout: 30_000,
+		navigationTimeout: 60_000,
+		// CI keeps a trace of every failed attempt, the first included: a failure
+		// that passes on retry is still one to explain.
+		trace: process.env.CI ? 'retain-on-failure' : 'on-first-retry'
 	},
 	projects,
 	webServer: [

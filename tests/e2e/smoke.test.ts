@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { headersFor, securityHeaderRules } from '../../csp.config.js';
 import { recordCspViolations } from './csp';
 

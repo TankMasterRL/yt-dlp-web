@@ -178,8 +178,9 @@
 					<p>
 						{codecName(merge.video.vcodec) ?? 'Video'} video + {codecName(merge.audio.acodec) ??
 							'audio'} audio, merged into one {merge.container.toUpperCase()} file right here — copied,
-						never re-encoded{#if mergeSize}
-							({mergeSize.approx ? '≈ ' : ''}{formatBytes(mergeSize.bytes)}){/if}.
+						never re-encoded{#if mergeSize}{' '}({mergeSize.approx ? '≈ ' : ''}{formatBytes(
+								mergeSize.bytes
+							)}){/if}.
 					</p>
 				</div>
 				{#if canStore === false}

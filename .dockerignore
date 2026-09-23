@@ -4,6 +4,7 @@ build
 .wheel-cache
 static/pyodide
 static/wheels
+static/ffmpeg
 .wrangler
 test-results
 playwright-report
