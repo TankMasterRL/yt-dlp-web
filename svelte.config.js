@@ -1,11 +1,9 @@
 import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-import { documentDirectives, relayOriginFromEnv } from './csp.config.js';
+import { basePathFromEnv, documentDirectives, relayOriginFromEnv } from './csp.config.js';
 
-// Serve from a subpath (e.g. GitHub Pages) with BASE_PATH=/repo-name at build
-// time. Normalized to SvelteKit's rules: leading slash, no trailing slash.
-const rawBase = process.env.BASE_PATH ?? '';
-const base = rawBase ? `/${rawBase.replace(/^\/+|\/+$/g, '')}` : '';
+// Serve from a subpath (e.g. GitHub Pages) with BASE_PATH=/repo-name at build time.
+const base = basePathFromEnv();
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {

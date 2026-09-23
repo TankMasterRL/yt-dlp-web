@@ -10,7 +10,7 @@
 	"scripts": {
 		"assets": "bun scripts/fetch-wheels.ts && bun scripts/sync-assets.ts",
 		"dev": "bun run assets && vite dev",
-		"build": "bun run assets && vite build",
+		"build": "bun run assets && vite build && bun scripts/write-headers.ts",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc -p worker/tsconfig.json && tsc -p scripts/tsconfig.json",
 		"test": "vitest run",
@@ -24,7 +24,8 @@
 		"worker:deploy": "wrangler deploy --config worker/wrangler.jsonc",
 		"screenshot": "bun run build && bun scripts/readme-screenshot.ts",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"audit": "bun audit --audit-level=moderate"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20260922.1",

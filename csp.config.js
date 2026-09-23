@@ -1,7 +1,8 @@
 /**
- * The app's Content Security Policy, in one place: svelte.config.js turns it
- * into the prerendered <meta> tag; the Vite preview server and the self-host
- * header files (M7) send it as real headers. Plain JS so both can import it.
+ * The app's Content Security Policy and security headers, in one place:
+ * svelte.config.js turns the document policy into the prerendered <meta> tag;
+ * the Vite preview server, `build/_headers` and `deploy/Caddyfile` (both from
+ * scripts/write-headers.ts) send the header rules. Plain JS so all can import it.
  */
 import { createHash } from 'node:crypto';
 
@@ -15,6 +16,15 @@ const announcerStyleHash = `sha256-${createHash('sha256').update(KIT_ANNOUNCER_S
 
 /** Trusted Types policies our own code creates (src/lib/trusted-types.ts). */
 export const APP_TRUSTED_TYPES_POLICIES = ['yt-dlp-web-worker-url'];
+
+/**
+ * BASE_PATH (subpath hosting, e.g. GitHub Pages) normalized to SvelteKit's
+ * rules: leading slash, no trailing slash, '' for the site root.
+ */
+export function basePathFromEnv(env = process.env) {
+	const raw = env.BASE_PATH ?? '';
+	return raw ? `/${raw.replace(/^\/+|\/+$/g, '')}` : '';
+}
 
 /** The relay Worker's origin from VITE_RELAY_URL, or null for same-origin (all-in-one). */
 export function relayOriginFromEnv(env = process.env) {
@@ -102,4 +112,100 @@ export function serializeCsp(directives) {
 			return [name, ...quoted].join(' ');
 		})
 		.join('; ');
+}
+
+/**
+ * What a <meta> CSP cannot say. The document's full policy stays in the
+ * prerendered <meta> tag (SvelteKit's script hashes change with every build);
+ * policies combine, so this header policy only adds — chiefly
+ * frame-ancestors, which no <meta> tag can carry.
+ */
+export const DOCUMENT_HEADER_DIRECTIVES = {
+	'frame-ancestors': ['none'],
+	'base-uri': ['none'],
+	'object-src': ['none']
+};
+
+/**
+ * Powerful features the app never uses, switched off (it embeds nothing, so no
+ * delegation either). Only features browsers recognise: an unknown one is a
+ * console error, which e2e fails on.
+ */
+const UNUSED_FEATURES = [
+	'accelerometer',
+	'browsing-topics',
+	'camera',
+	'display-capture',
+	'geolocation',
+	'gyroscope',
+	'hid',
+	'magnetometer',
+	'microphone',
+	'midi',
+	'payment',
+	'serial',
+	'usb',
+	'xr-spatial-tracking'
+];
+
+/**
+ * Response headers for hosts that can set them, as `_headers`-style rules: a
+ * path pattern (`*` is the only wildcard) and its headers. Where several rules
+ * match, a repeated header's values are joined with a comma, as Cloudflare and
+ * Netlify merge `_headers` rules — for CSP, that means both policies apply.
+ * No Cross-Origin-Embedder-Policy: nothing here needs SharedArrayBuffer.
+ * @param {{ relayOrigin: string | null, base?: string }} options
+ * @returns {{ path: string, headers: Record<string, string> }[]}
+ */
+export function securityHeaderRules({ relayOrigin, base = '' }) {
+	return [
+		{
+			path: `${base}/*`,
+			headers: {
+				'Content-Security-Policy': serializeCsp(DOCUMENT_HEADER_DIRECTIVES),
+				'X-Frame-Options': 'DENY',
+				'X-Content-Type-Options': 'nosniff',
+				'Referrer-Policy': 'no-referrer',
+				'Cross-Origin-Opener-Policy': 'same-origin',
+				'Cross-Origin-Resource-Policy': 'same-origin',
+				'Permissions-Policy': UNUSED_FEATURES.map((feature) => `${feature}=()`).join(', '),
+				// Browsers only honour it over HTTPS; deliberately no includeSubDomains.
+				'Strict-Transport-Security': 'max-age=31536000'
+			}
+		},
+		{
+			// A worker's CSP comes from its own response; the page's <meta> never reaches it.
+			path: `${base}/_app/immutable/workers/*`,
+			headers: { 'Content-Security-Policy': serializeCsp(workerDirectives({ relayOrigin })) }
+		},
+		{
+			// Content-hashed names: a changed file is a new URL.
+			path: `${base}/_app/immutable/*`,
+			headers: { 'Cache-Control': 'public, max-age=31536000, immutable' }
+		}
+	];
+}
+
+/**
+ * The headers `rules` give a request path (no query string), merged the way
+ * `_headers` files merge them.
+ * @param {string} path
+ * @param {{ path: string, headers: Record<string, string> }[]} rules
+ */
+export function headersFor(path, rules) {
+	/** @type {Record<string, string>} */
+	const merged = {};
+	for (const rule of rules) {
+		if (!patternRegExp(rule.path).test(path)) continue;
+		for (const [name, value] of Object.entries(rule.headers)) {
+			merged[name] = merged[name] ? `${merged[name]}, ${value}` : value;
+		}
+	}
+	return merged;
+}
+
+/** @param {string} pattern */
+function patternRegExp(pattern) {
+	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
+	return new RegExp(`^${escaped}$`);
 }

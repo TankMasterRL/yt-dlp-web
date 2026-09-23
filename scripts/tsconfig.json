@@ -9,7 +9,10 @@
 		"skipLibCheck": true,
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
-		"isolatedModules": true
+		"isolatedModules": true,
+		// csp.config.js is plain JS (svelte.config.js imports it); its JSDoc types it.
+		"allowJs": true,
+		"checkJs": true
 	},
 	"include": ["*.ts"]
 }

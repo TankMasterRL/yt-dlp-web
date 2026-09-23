@@ -3,22 +3,31 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
-import { relayOriginFromEnv, serializeCsp, workerDirectives } from './csp.config.js';
+import {
+	basePathFromEnv,
+	headersFor,
+	relayOriginFromEnv,
+	securityHeaderRules
+} from './csp.config.js';
 
 /**
- * `vite preview` serves worker scripts with the header CSP a self-hosted deploy
- * sends (a <meta> tag cannot reach a worker), so e2e proves Pyodide + yt-dlp run
- * under it: 'wasm-unsafe-eval' only, and Trusted Types with no policies at all.
+ * `vite preview` sends the security headers a real deploy sends (`build/_headers`,
+ * `deploy/Caddyfile` — the same rules), so e2e proves the app works under them:
+ * the workers' own CSP ('wasm-unsafe-eval' only, Trusted Types with no policies —
+ * a <meta> tag cannot reach a worker), no framing, COOP/CORP, no unused features.
  */
-function workerCspHeader(): Plugin {
+function securityHeaders(): Plugin {
 	return {
-		name: 'yt-dlp-web:worker-csp',
+		name: 'yt-dlp-web:security-headers',
 		configurePreviewServer(server) {
-			const csp = serializeCsp(workerDirectives({ relayOrigin: relayOriginFromEnv() }));
+			const rules = securityHeaderRules({
+				relayOrigin: relayOriginFromEnv(),
+				base: basePathFromEnv()
+			});
 			server.middlewares.use((req, res, next) => {
-				if (req.url?.includes('/_app/immutable/workers/')) {
-					res.setHeader('Content-Security-Policy', csp);
-				}
+				const path = (req.url ?? '/').split('?')[0];
+				for (const [name, value] of Object.entries(headersFor(path, rules)))
+					res.setHeader(name, value);
 				next();
 			});
 		}
@@ -26,7 +35,7 @@ function workerCspHeader(): Plugin {
 }
 
 export default defineConfig({
-	plugins: [sveltekit(), svelteTesting(), workerCspHeader()],
+	plugins: [sveltekit(), svelteTesting(), securityHeaders()],
 	// NOTE: No cross-origin isolation (COOP/COEP) — nothing here needs
 	// SharedArrayBuffer: Python I/O is synchronous XHR inside a Worker, and the
 	// opt-in ffmpeg.wasm uses the single-threaded core.

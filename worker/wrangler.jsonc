@@ -17,12 +17,20 @@
 	"ratelimits": [
 		{ "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 600, "period": 60 } }
 	],
+	// All-in-one deploy: this Worker also serves the app, so the app, /relay and
+	// /solve share one origin (connect-src 'self', no CORS) and build/_headers
+	// applies. Build WITHOUT VITE_RELAY_URL and WITHOUT ffmpeg.wasm (Static Assets
+	// caps files at 25 MiB; its wasm is 30.7 MiB), uncomment, `bun run worker:deploy`:
+	//   YT_DLP_WEB_FFMPEG=0 bun run build
+	// "assets": {
+	// 	"directory": "../build",
+	// 	"binding": "ASSETS",
+	// 	"run_worker_first": ["/relay", "/solve"],
+	// 	"not_found_handling": "404-page"
+	// },
 	// /solve runs YouTube's player JS in a network-severed Dynamic Worker isolate.
 	// Worker Loaders need a Workers Paid plan: on the Free plan, delete this
 	// block — the relay still works, /solve answers 501, and yt-dlp falls back to
 	// YouTube clients that need no JS challenge solving (fewer formats).
 	"worker_loaders": [{ "binding": "LOADER" }]
-	// All-in-one deploy — this Worker also serves the app from one origin, with full
-	// security headers and no CORS. Build the app WITHOUT VITE_RELAY_URL, then:
-	// "assets": { "directory": "../build", "binding": "ASSETS", "run_worker_first": ["/relay"] }
 }
