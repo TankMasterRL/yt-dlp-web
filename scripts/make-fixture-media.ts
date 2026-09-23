@@ -1,12 +1,16 @@
 /**
- * Regenerate tests/fixtures/media/*.webm — tiny, real, playable clips for the
- * e2e download → library → playback → merge tests:
+ * Regenerate tests/fixtures/media/ — tiny, real clips for the e2e download →
+ * library → playback → merge tests, and the merge integration tests:
  *
  * - bbf-360/720.webm: video only (VP8). Chromium draws the frames (JPEG from a
  *   canvas); Playwright's bundled ffmpeg (MJPEG in, VP8/WebM out, with proper
  *   duration metadata) encodes them.
  * - bbf-audio.webm: audio only (Opus), recorded from an oscillator with
  *   MediaRecorder (Playwright's ffmpeg has no audio encoders).
+ * - bbf-av1.mp4, bbf-vp9.webm: video only (AV1 in fragmented MP4, VP9 in
+ *   WebM), the codecs of YouTube's best formats, recorded from a canvas with
+ *   MediaRecorder: Playwright's ffmpeg encodes neither, ffmpeg.wasm has no AV1
+ *   encoder and its VP9 one crashes. Only remuxed, in the integration tests.
  *
  * WebM because Chromium builds without proprietary codecs cannot play H.264.
  *
@@ -116,4 +120,50 @@ const audio: string = await page.evaluate(async () => {
 });
 await Bun.write(join(OUT, 'bbf-audio.webm'), Buffer.from(audio, 'base64'));
 console.log(`✓ ${join(OUT, 'bbf-audio.webm')}`);
+/** Two seconds of an animated canvas, as MediaRecorder encodes it in `mimeType`. */
+async function recordCanvas(mimeType: string, label: string): Promise<Buffer> {
+	const recorded: string = await page.evaluate(
+		async ({ mimeType, label }) => {
+			const canvas = document.createElement('canvas');
+			canvas.width = 320;
+			canvas.height = 180;
+			const ctx = canvas.getContext('2d')!;
+			let frame = 0;
+			const draw = () => {
+				ctx.fillStyle = `hsl(${(frame * 15) % 360}, 70%, 45%)`;
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				ctx.fillStyle = '#fff';
+				ctx.font = 'bold 36px sans-serif';
+				ctx.fillText(`${label} ${++frame}`, 20, 100);
+			};
+			draw();
+			const recorder = new MediaRecorder(canvas.captureStream(12), {
+				mimeType,
+				videoBitsPerSecond: 150_000
+			});
+			const chunks: Blob[] = [];
+			recorder.ondataavailable = (e) => chunks.push(e.data);
+			const stopped = new Promise((r) => (recorder.onstop = r));
+			const timer = setInterval(draw, 1000 / 12);
+			recorder.start();
+			await new Promise((r) => setTimeout(r, 2000));
+			recorder.stop();
+			await stopped;
+			clearInterval(timer);
+			const bytes = new Uint8Array(await new Blob(chunks).arrayBuffer());
+			let binary = '';
+			for (const b of bytes) binary += String.fromCharCode(b);
+			return btoa(binary);
+		},
+		{ mimeType, label }
+	);
+	return Buffer.from(recorded, 'base64');
+}
+for (const [name, mimeType, label] of [
+	['bbf-av1.mp4', 'video/mp4;codecs=av01', 'AV1'],
+	['bbf-vp9.webm', 'video/webm;codecs=vp9', 'VP9']
+] as const) {
+	await Bun.write(join(OUT, name), await recordCanvas(mimeType, label));
+	console.log(`✓ ${join(OUT, name)}`);
+}
 await browser.close();

@@ -1,5 +1,6 @@
 /**
- * The remux worker: ffmpeg.wasm merges a download's video and audio parts.
+ * The remux worker: FFmpeg merges a download's video and audio parts — the
+ * core the build ships, ffmpeg.wasm or the remux core (scripts/build-ffmpeg.ts).
  *
  * Opt-in and lazy: the single-threaded core (no SharedArrayBuffer, so no
  * cross-origin isolation) is fetched from this app's own origin only when a
@@ -41,7 +42,8 @@ serveWorker<RemuxLoad, RemuxWork, { bytesTotal: number }, never>({
 		const { default: createFFmpegCore } = (await import(/* @vite-ignore */ coreURL)) as {
 			default: (options: { mainScriptUrlOrBlob: string }) => Promise<FFmpegCore>;
 		};
-		// The core finds its wasm through this fragment (as @ffmpeg/ffmpeg passes it).
+		// ffmpeg.wasm finds its wasm through this fragment (as @ffmpeg/ffmpeg passes
+		// it); the remux core ignores it and loads the ffmpeg-core.wasm beside it.
 		core = await createFFmpegCore({
 			mainScriptUrlOrBlob: `${coreURL}#${btoa(JSON.stringify({ wasmURL, workerURL: '' }))}`
 		});

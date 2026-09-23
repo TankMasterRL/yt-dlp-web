@@ -5,6 +5,7 @@ build
 static/pyodide
 static/wheels
 static/ffmpeg
+.ffmpeg-build
 .wrangler
 test-results
 playwright-report

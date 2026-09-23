@@ -3,22 +3,26 @@
  *
  *   node_modules/pyodide/{pyodide.mjs,…}        →  static/pyodide/
  *   .wheel-cache/*.whl                           →  static/wheels/
- *   node_modules/@ffmpeg/core/dist/esm/*         →  static/ffmpeg/  (+ NOTICE.txt)
+ *   an FFmpeg core (YT_DLP_WEB_FFMPEG)           →  static/ffmpeg/  (+ NOTICE.txt)
  *
  * All destinations are gitignored build artifacts. Serving them from our own
  * origin keeps CSP `connect-src`/`script-src` at 'self' and means no CDN or PyPI
  * is contacted at runtime. Run after `fetch-wheels.ts` (see `bun run assets`).
  *
- * ffmpeg.wasm (merging separate video and audio) is opt-out: YT_DLP_WEB_FFMPEG=0
- * leaves it out of the build — for hosts that cap file sizes below its ~31 MiB
- * wasm (Workers Static Assets: 25 MiB), or to avoid shipping GPL code. The app
- * then offers no merging.
+ * The FFmpeg core merges separate video and audio. YT_DLP_WEB_FFMPEG picks it:
+ * unset, ffmpeg.wasm (`@ffmpeg/core`: GPL-2.0-or-later, ~31 MiB of wasm);
+ * `remux`, the remux core `bun run build:ffmpeg` compiles (LGPL-2.1-or-later,
+ * ~2.5 MiB: it only copies streams); `0`, none — for hosts that cap file sizes
+ * below ffmpeg.wasm's (Workers Static Assets: 25 MiB) unless the remux core is
+ * built, or to ship no FFmpeg at all. The app then offers no merging.
  */
+import { readFileSync } from 'node:fs';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WHEELS } from '../src/lib/engine/wheels.ts';
 import { FFMPEG_CORE_JS, FFMPEG_CORE_WASM, FFMPEG_DIR } from '../src/lib/remux/assets.ts';
+import { CORE_FILES, FFMPEG_DIST_DIR, readBuildInfo, type BuildInfo } from './build-ffmpeg.ts';
 
 // Not import.meta.dir: tests import this module under Node.
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -57,6 +61,89 @@ streams, in the browser, without re-encoding them.
 /** The ffmpeg.wasm git tag each @ffmpeg/core release was built from. */
 export const FFMPEG_SOURCE_TAGS: Record<string, string> = { '0.12.10': 'v12.15' };
 
+/**
+ * Shipped next to the remux core: FFmpeg's libraries, linked into one
+ * WebAssembly file, are LGPL-2.1-or-later, so whoever serves them must say so,
+ * point at their source, and make relinking possible (the recipe and the
+ * program that links them are yt-dlp-web's own source).
+ */
+export function remuxNotice(info: BuildInfo): string {
+	return `ffmpeg-core.js and ffmpeg-core.wasm in this directory are yt-dlp-web's remux core:
+FFmpeg's libraries (libavformat, libavcodec, libavutil), unmodified, compiled to
+WebAssembly with Emscripten ${info.emscripten} and linked with a small program that
+copies streams from one container into another. They hold every demuxer, muxer,
+parser and bitstream filter of FFmpeg, and no decoder, encoder or filter.
+
+License: LGPL-2.1-or-later (FFmpeg built without GPL or nonfree components).
+See https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+Emscripten's runtime and C library: MIT and NCSA
+(https://github.com/emscripten-core/emscripten/blob/main/LICENSE).
+
+Corresponding source:
+- FFmpeg: ${info.ffmpeg.repository}/tree/${info.ffmpeg.commit}
+  configured with: ${info.configure.join(' ')}
+- the program, its JavaScript interface and the build recipe: ffmpeg/remux.c,
+  ffmpeg/pre.js and scripts/build-ffmpeg.ts in yt-dlp-web
+  (https://github.com/TankMasterRL/yt-dlp-web). \`bun run build:ffmpeg\` rebuilds
+  the core, against a modified FFmpeg too.
+
+yt-dlp-web loads this core only to merge separately downloaded video and audio
+streams, in the browser, without re-encoding them.
+`;
+}
+
+export type FFmpegChoice = 'ffmpeg.wasm' | 'remux' | 'none';
+
+/** YT_DLP_WEB_FFMPEG: unset (or 1) ffmpeg.wasm, `remux` the remux core, `0` none. */
+export function ffmpegChoice(value: string | undefined): FFmpegChoice {
+	if (value === undefined || value === '' || value === '1') return 'ffmpeg.wasm';
+	if (value === 'remux') return 'remux';
+	if (value === '0') return 'none';
+	throw new Error(`YT_DLP_WEB_FFMPEG must be unset, 1, remux or 0, not "${value}"`);
+}
+
+export interface FFmpegAssets {
+	from: string;
+	files: readonly string[];
+	notice: string;
+	/** For the build log. */
+	label: string;
+}
+
+/** Where the chosen core's files come from, and the notice that goes with them. */
+export function ffmpegAssets(
+	choice: FFmpegChoice,
+	{ remuxDist = FFMPEG_DIST_DIR }: { remuxDist?: string } = {}
+): FFmpegAssets | null {
+	if (choice === 'none') return null;
+	if (choice === 'remux') {
+		const info = readBuildInfo(remuxDist);
+		if (!info)
+			throw new Error('YT_DLP_WEB_FFMPEG=remux: build the remux core first (bun run build:ffmpeg)');
+		return {
+			from: remuxDist,
+			files: CORE_FILES,
+			notice: remuxNotice(info),
+			label: `the remux core (FFmpeg ${info.ffmpeg.commit.slice(0, 12)})`
+		};
+	}
+	const pkg = join(root, 'node_modules', '@ffmpeg', 'core');
+	const { version } = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as {
+		version: string;
+	};
+	const tag = FFMPEG_SOURCE_TAGS[version];
+	if (!tag)
+		throw new Error(
+			`Add the ffmpeg.wasm source tag for @ffmpeg/core ${version} to FFMPEG_SOURCE_TAGS`
+		);
+	return {
+		from: join(pkg, 'dist', 'esm'),
+		files: FFMPEG_CORE_FILES,
+		notice: ffmpegNotice(version, tag),
+		label: `ffmpeg.wasm ${version}`
+	};
+}
+
 async function copyAll(files: readonly string[], from: string, to: string): Promise<void> {
 	await mkdir(to, { recursive: true });
 	for (const file of files) {
@@ -85,20 +172,12 @@ if (import.meta.main) {
 
 	const ffmpegTarget = join(root, 'static', FFMPEG_DIR);
 	await rm(ffmpegTarget, { recursive: true, force: true });
-	if (process.env.YT_DLP_WEB_FFMPEG === '0') {
-		console.log(
-			'– left ffmpeg.wasm out (YT_DLP_WEB_FFMPEG=0): this build cannot merge video and audio'
-		);
+	const ffmpeg = ffmpegAssets(ffmpegChoice(process.env.YT_DLP_WEB_FFMPEG));
+	if (!ffmpeg) {
+		console.log('– left FFmpeg out (YT_DLP_WEB_FFMPEG=0): this build cannot merge video and audio');
 	} else {
-		const pkg = join(root, 'node_modules', '@ffmpeg', 'core');
-		const { version } = (await Bun.file(join(pkg, 'package.json')).json()) as { version: string };
-		const tag = FFMPEG_SOURCE_TAGS[version];
-		if (!tag)
-			throw new Error(
-				`Add the ffmpeg.wasm source tag for @ffmpeg/core ${version} to FFMPEG_SOURCE_TAGS`
-			);
-		await copyAll(FFMPEG_CORE_FILES, join(pkg, 'dist', 'esm'), ffmpegTarget);
-		await writeFile(join(ffmpegTarget, 'NOTICE.txt'), ffmpegNotice(version, tag));
-		console.log(`✓ synced ffmpeg.wasm ${version} into static/${FFMPEG_DIR}`);
+		await copyAll(ffmpeg.files, ffmpeg.from, ffmpegTarget);
+		await writeFile(join(ffmpegTarget, 'NOTICE.txt'), ffmpeg.notice);
+		console.log(`✓ synced ${ffmpeg.label} into static/${FFMPEG_DIR}`);
 	}
 }

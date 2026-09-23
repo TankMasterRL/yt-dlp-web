@@ -27,8 +27,13 @@
 		solveEndpoint: endpoints.solve
 	});
 	const library = getLibrary(endpoints);
-	/** Whether this deployment ships ffmpeg.wasm; null until asked. */
+	/** Whether this deployment ships an FFmpeg core; null until asked. */
 	let canMerge = $state<boolean | null>(null);
+	/** Which core the build ships (scripts/sync-assets.ts), under which license. */
+	const ffmpeg =
+		import.meta.env.YT_DLP_WEB_FFMPEG === 'remux'
+			? { name: 'FFmpeg', license: 'LGPL-2.1-or-later' }
+			: { name: 'ffmpeg.wasm', license: 'GPL-2.0-or-later' };
 	/** Whether this browser lets the app keep files (OPFS); null until asked. */
 	let canStore = $state<boolean | null>(null);
 	/** Library item ids started from this page, newest first. */
@@ -190,8 +195,8 @@
 						>Download best quality</button
 					>
 					<p class="license">
-						Merging uses <a href={asset('/ffmpeg/NOTICE.txt')}>ffmpeg.wasm</a> (GPL-2.0-or-later), loaded
-						only when you merge.
+						Merging uses <a href={asset('/ffmpeg/NOTICE.txt')}>{ffmpeg.name}</a> ({ffmpeg.license}),
+						loaded only when you merge.
 					</p>
 				{:else if canMerge === false}
 					<p class="note" data-merge="unavailable">

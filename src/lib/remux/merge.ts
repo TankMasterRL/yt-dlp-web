@@ -1,5 +1,5 @@
 /**
- * Merge a video-only and an audio-only stream into one file with ffmpeg.wasm —
+ * Merge a video-only and an audio-only stream into one file with FFmpeg —
  * a stream copy (remux), never a re-encode, so it runs at I/O speed. Pure
  * over an injected ffmpeg core and byte handles: the remux worker passes the
  * real core and OPFS handles, the integration test the real core and memory.
@@ -7,7 +7,7 @@
 import type { MergeContainer } from '$lib/formats';
 import { withHandles, type ByteHandle, type EmscriptenFs } from './handle-fs';
 
-/** The slice of `@ffmpeg/core`'s module this uses. */
+/** The slice of `@ffmpeg/core`'s module this uses; the remux core's ffmpeg/pre.js has the same. */
 export interface FFmpegCore {
 	FS: EmscriptenFs;
 	/** Runs ffmpeg synchronously; returns its exit code. */

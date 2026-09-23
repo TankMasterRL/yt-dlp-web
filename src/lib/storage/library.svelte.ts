@@ -43,7 +43,7 @@ export interface MergeRequest {
 
 /** Remuxes (stream copy, no re-encoding) separate video and audio into one file. */
 export interface Remuxer {
-	/** Whether this deployment ships ffmpeg.wasm (it is opt-in at build time). */
+	/** Whether this deployment ships an FFmpeg core (YT_DLP_WEB_FFMPEG=0 leaves it out). */
 	available(): Promise<boolean>;
 	merge(request: MergeRequest): Promise<{ bytesTotal: number }>;
 }
@@ -61,7 +61,7 @@ export interface ChannelLike {
 export interface LibraryDeps {
 	db: LibraryDb;
 	downloader: Downloader;
-	/** ffmpeg.wasm in the remux worker; absent when the deployment does not ship it. */
+	/** FFmpeg in the remux worker; absent when the deployment does not ship it. */
 	remuxer?: Remuxer;
 	files: FileStore;
 	/** Item ids some tab is downloading right now (Web Locks held by download workers). */

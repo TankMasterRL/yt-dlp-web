@@ -9,14 +9,14 @@ Worker are as welcome as reports about the app.
 
 ## What runs where
 
-| Where                   | What                       | Trust                                                                                                        |
-| ----------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Page (the app's origin) | Svelte UI                  | Runs only the app's own code: no inline scripts beyond SvelteKit's hashed bootstrap, Trusted Types enforced. |
-| Engine worker           | Pyodide + yt-dlp           | Pinned, hash-checked code that parses **untrusted** pages and JSON as data.                                  |
-| Download worker         | Ranged downloads into OPFS | Moves untrusted bytes; never interprets them.                                                                |
-| Remux worker (opt-in)   | ffmpeg.wasm                | Parses untrusted media inside WebAssembly; it can touch exactly three OPFS files.                            |
-| Relay Worker `/relay`   | Cloudflare Worker          | A byte pipe: no secrets, no storage, no parsing.                                                             |
-| Relay Worker `/solve`   | Dynamic Worker isolate     | Runs **untrusted** YouTube player JavaScript with no network and no bindings.                                |
+| Where                   | What                       | Trust                                                                                                                    |
+| ----------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Page (the app's origin) | Svelte UI                  | Runs only the app's own code: no inline scripts beyond SvelteKit's hashed bootstrap, Trusted Types enforced.             |
+| Engine worker           | Pyodide + yt-dlp           | Pinned, hash-checked code that parses **untrusted** pages and JSON as data.                                              |
+| Download worker         | Ranged downloads into OPFS | Moves untrusted bytes; never interprets them.                                                                            |
+| Remux worker (opt-in)   | FFmpeg                     | Parses untrusted media inside WebAssembly; it can touch exactly three OPFS files. The remux core has no decoders at all. |
+| Relay Worker `/relay`   | Cloudflare Worker          | A byte pipe: no secrets, no storage, no parsing.                                                                         |
+| Relay Worker `/solve`   | Dynamic Worker isolate     | Runs **untrusted** YouTube player JavaScript with no network and no bindings.                                            |
 
 Untrusted JavaScript never runs in the app's origin: YouTube's player code is evaluated only in the
 `/solve` isolate.
@@ -70,7 +70,7 @@ Where the rules end up:
 | GitHub Pages                                     | **Cannot send headers.** See below.                                     |
 
 There is deliberately **no cross-origin isolation** (no COEP). Nothing needs SharedArrayBuffer:
-Python's I/O is synchronous XHR inside a Worker, and ffmpeg.wasm uses its single-threaded core.
+Python's I/O is synchronous XHR inside a Worker, and both FFmpeg cores are single-threaded.
 
 ### On GitHub Pages
 
@@ -153,8 +153,12 @@ yt-dlp uses YouTube clients that need no challenge solving.
   served from the app's own origin. No CDN, PyPI or micropip is involved at runtime.
 - `bun run audit` checks the dependency tree against known advisories, and fails on anything
   moderate or worse.
+- **The remux core** (`bun run build:ffmpeg`) is compiled from pinned sources, fetched by git: an
+  FFmpeg commit, and an Emscripten release (emsdk's tag, or in CI that release's
+  `emscripten/emsdk` image). The build is reproducible: the same pins give the same bytes.
 - **ffmpeg.wasm is GPL-2.0-or-later.** Builds ship it with `ffmpeg/NOTICE.txt`, which names the tag
-  of its corresponding source. `YT_DLP_WEB_FFMPEG=0` leaves it out. See `docs/THIRD-PARTY.md`.
+  of its corresponding source. `YT_DLP_WEB_FFMPEG=remux` ships the LGPL remux core instead, and
+  `YT_DLP_WEB_FFMPEG=0` no FFmpeg at all. See `docs/THIRD-PARTY.md`.
 
 ## Browser storage
 

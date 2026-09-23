@@ -24,7 +24,8 @@ const spawnWorker = () =>
 
 /**
  * One worker, started when a merge starts and stopped when the last running
- * merge ends: ffmpeg's ~31 MiB of wasm and its heap are held only while used.
+ * merge ends: the core's wasm (~31 MiB for ffmpeg.wasm, ~2.5 MiB for the
+ * remux core) and its heap are held only while used.
  */
 export function workerRemuxer(
 	assetsBase: string,

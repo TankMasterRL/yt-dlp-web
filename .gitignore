@@ -12,6 +12,8 @@ vite.config.*.timestamp-*
 static/wheels/
 static/pyodide/
 static/ffmpeg/
+# bun run build:ffmpeg: FFmpeg's source, the build, the remux core (and emsdk, if it installed one)
+.ffmpeg-build/
 
 # Cloudflare
 .wrangler/

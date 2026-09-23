@@ -19,6 +19,7 @@
 		"test:browseros": "BROWSEROS=1 playwright test --project=browseros",
 		"test:docker": "docker build -f Dockerfile.test -t yt-dlp-web-tests . && docker run --rm --ipc=host yt-dlp-web-tests",
 		"fetch:wheels": "bun scripts/fetch-wheels.ts",
+		"build:ffmpeg": "bun scripts/build-ffmpeg.ts",
 		"update:ytdlp": "bun scripts/update-ytdlp.ts",
 		"worker:dev": "wrangler dev --config worker/wrangler.jsonc",
 		"worker:deploy": "wrangler deploy --config worker/wrangler.jsonc",

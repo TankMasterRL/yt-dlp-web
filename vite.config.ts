@@ -36,9 +36,13 @@ function securityHeaders(): Plugin {
 
 export default defineConfig({
 	plugins: [sveltekit(), svelteTesting(), securityHeaders()],
+	define: {
+		// Which FFmpeg core scripts/sync-assets.ts ships, so the page can name its license.
+		'import.meta.env.YT_DLP_WEB_FFMPEG': JSON.stringify(process.env.YT_DLP_WEB_FFMPEG ?? '')
+	},
 	// NOTE: No cross-origin isolation (COOP/COEP) — nothing here needs
-	// SharedArrayBuffer: Python I/O is synchronous XHR inside a Worker, and the
-	// opt-in ffmpeg.wasm uses the single-threaded core.
+	// SharedArrayBuffer: Python I/O is synchronous XHR inside a Worker, and both
+	// FFmpeg cores (ffmpeg.wasm's, and the remux core) are single-threaded.
 	worker: {
 		format: 'es'
 	},
@@ -68,7 +72,7 @@ export default defineConfig({
 					name: 'node',
 					environment: 'node',
 					// Not inherited (this project does not `extends: true`): the real
-					// Pyodide, ffmpeg.wasm and workerd boots need far more than the 10 s default.
+					// Pyodide, FFmpeg and workerd boots need far more than the 10 s default.
 					testTimeout: 60_000,
 					hookTimeout: 120_000,
 					include: [

@@ -14,7 +14,8 @@ function hasAudio(element: HTMLVideoElement): boolean {
 	return (media.webkitAudioDecodedByteCount ?? 0) > 0; // Chromium, once decoding runs
 }
 
-test.describe('merging separate video and audio with ffmpeg.wasm', () => {
+// Runs with the FFmpeg core the build ships: ffmpeg.wasm, or (YT_DLP_WEB_FFMPEG=remux) the remux core.
+test.describe('merging separate video and audio with FFmpeg', () => {
 	test.describe.configure({ timeout: ENGINE_BOOT_MS + EXTRACTION_MS + 120_000 });
 
 	test('downloads both streams and remuxes them into one playable file, under the strict CSP', async ({
@@ -41,7 +42,7 @@ test.describe('merging separate video and audio with ffmpeg.wasm', () => {
 			timeout: EXTRACTION_MS
 		});
 		await expect(best).toContainText(/never re-encoded \(\d+(\.\d+)? KiB\)\./);
-		// Until a merge starts, only a HEAD probe has asked about ffmpeg.wasm.
+		// Until a merge starts, only a HEAD probe has asked about the FFmpeg core.
 		expect(ffmpegRequests).toEqual(['HEAD /ffmpeg/ffmpeg-core.wasm']);
 
 		const remuxWorker = page.waitForEvent('worker', (worker) =>
@@ -49,7 +50,7 @@ test.describe('merging separate video and audio with ffmpeg.wasm', () => {
 		);
 		await best.getByRole('button', { name: 'Download best quality' }).click();
 
-		// ffmpeg.wasm runs under the same header CSP as the engine: WebAssembly
+		// FFmpeg runs under the same header CSP as the engine: WebAssembly
 		// allowed, eval not, Trusted Types with no policies at all.
 		const workerCsp = (await request.get((await remuxWorker).url())).headers()[
 			'content-security-policy'

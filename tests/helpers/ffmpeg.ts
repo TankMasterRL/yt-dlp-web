@@ -1,34 +1,55 @@
 /**
- * The REAL ffmpeg.wasm core (`@ffmpeg/core`, the build the app serves), booted
- * in Node for integration tests, plus an in-memory stand-in for an OPFS sync
- * access handle.
+ * The REAL FFmpeg cores the app can serve, booted in Node for integration
+ * tests — ffmpeg.wasm (`@ffmpeg/core`) and the remux core `bun run
+ * build:ffmpeg` compiles — plus an in-memory stand-in for an OPFS sync access
+ * handle.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { EmscriptenFs, ByteHandle } from '../../src/lib/remux/handle-fs';
 import type { FFmpegCore } from '../../src/lib/remux/merge';
 
-const DIST = new URL('../../node_modules/@ffmpeg/core/dist/esm/', import.meta.url);
+const FFMPEG_WASM = new URL('../../node_modules/@ffmpeg/core/dist/esm/', import.meta.url);
+/** Where `bun run build:ffmpeg` leaves the remux core (gitignored). */
+const REMUX_CORE = new URL('../../.ffmpeg-build/dist/', import.meta.url);
 
-export interface NodeFFmpegCore extends FFmpegCore {
+/** A core with the rest of Emscripten's FS, which tests use to stage files. */
+export interface NodeCore extends FFmpegCore {
 	FS: EmscriptenFs & {
 		writeFile(path: string, data: Uint8Array): void;
 		readFile(path: string): Uint8Array;
 		readdir(path: string): string[];
 		unlink(path: string): void;
 	};
+}
+
+/** ffmpeg.wasm: every encoder, lavfi and ffprobe — what tests make and inspect media with. */
+export interface NodeFFmpegCore extends NodeCore {
 	ffprobe(...args: string[]): number;
 }
 
-export async function loadFFmpegCore(): Promise<NodeFFmpegCore> {
-	// The ESM build targets workers only: it reads self.location while starting.
+async function loadCore(dist: URL): Promise<unknown> {
+	// Both ESM builds target workers only: they read self.location while starting.
 	const global = globalThis as { self?: unknown; location?: unknown };
 	global.self ??= globalThis;
-	global.location ??= { href: new URL('ffmpeg-core.js', DIST).href };
+	global.location ??= { href: new URL('ffmpeg-core.js', dist).href };
 	const { default: createFFmpegCore } = await import(
-		/* @vite-ignore */ new URL('ffmpeg-core.js', DIST).href
+		/* @vite-ignore */ new URL('ffmpeg-core.js', dist).href
 	);
 	// Hand it the wasm bytes: Node's fetch cannot read file: URLs.
-	return createFFmpegCore({ wasmBinary: readFileSync(new URL('ffmpeg-core.wasm', DIST)) });
+	return createFFmpegCore({ wasmBinary: readFileSync(new URL('ffmpeg-core.wasm', dist)) });
+}
+
+export async function loadFFmpegCore(): Promise<NodeFFmpegCore> {
+	return (await loadCore(FFMPEG_WASM)) as NodeFFmpegCore;
+}
+
+/** Whether `bun run build:ffmpeg` has built the remux core here. */
+export const remuxCoreBuilt = (): boolean =>
+	existsSync(new URL('ffmpeg-core.js', REMUX_CORE)) &&
+	existsSync(new URL('ffmpeg-core.wasm', REMUX_CORE));
+
+export async function loadRemuxCore(): Promise<NodeCore> {
+	return (await loadCore(REMUX_CORE)) as NodeCore;
 }
 
 /** A growable byte file with the read/write/truncate semantics of `FileSystemSyncAccessHandle`. */

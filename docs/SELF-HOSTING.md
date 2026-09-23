@@ -10,11 +10,11 @@ The app cannot work without the relay: youtube.com does not let pages on other o
 
 Pick a layout:
 
-| Layout                                | App                                 | Relay                                  | Security headers                         | Merging (ffmpeg.wasm) |
-| ------------------------------------- | ----------------------------------- | -------------------------------------- | ---------------------------------------- | --------------------- |
-| **Static host with headers + Worker** | Cloudflare Pages, Netlify, Caddy, … | its own `workers.dev` or custom domain | ✓ (`build/_headers`, `deploy/Caddyfile`) | ✓                     |
-| **All-in-one Worker**                 | the Worker's static assets          | same origin                            | ✓ (`build/_headers`)                     | ✗ (25 MiB asset cap)  |
-| **GitHub Pages + Worker**             | GitHub Pages                        | its own domain                         | ✗ (the page's `<meta>` CSP only)         | ✓                     |
+| Layout                                | App                                 | Relay                                  | Security headers                         | Merging (FFmpeg)                       |
+| ------------------------------------- | ----------------------------------- | -------------------------------------- | ---------------------------------------- | -------------------------------------- |
+| **Static host with headers + Worker** | Cloudflare Pages, Netlify, Caddy, … | its own `workers.dev` or custom domain | ✓ (`build/_headers`, `deploy/Caddyfile`) | ✓                                      |
+| **All-in-one Worker**                 | the Worker's static assets          | same origin                            | ✓ (`build/_headers`)                     | the remux core only (25 MiB asset cap) |
+| **GitHub Pages + Worker**             | GitHub Pages                        | its own domain                         | ✗ (the page's `<meta>` CSP only)         | ✓                                      |
 
 `docs/SECURITY.md` explains what the headers add and what GitHub Pages gives up.
 
@@ -51,11 +51,12 @@ bun install
 VITE_RELAY_URL=https://yt-dlp-web.<account>.workers.dev bun run build
 ```
 
-| Variable              | Meaning                                                                                                                                                   |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_RELAY_URL`      | The relay's URL. Its origin becomes the only extra origin in the CSP's `connect-src`. Leave it unset when the relay shares the app's origin (all-in-one). |
-| `BASE_PATH`           | Serve from a subpath, e.g. `/yt-dlp-web`. The paths in `build/_headers` follow it.                                                                        |
-| `YT_DLP_WEB_FFMPEG=0` | Leave ffmpeg.wasm out: no merging of separate video and audio, and no GPL code shipped.                                                                   |
+| Variable                  | Meaning                                                                                                                                                   |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_RELAY_URL`          | The relay's URL. Its origin becomes the only extra origin in the CSP's `connect-src`. Leave it unset when the relay shares the app's origin (all-in-one). |
+| `BASE_PATH`               | Serve from a subpath, e.g. `/yt-dlp-web`. The paths in `build/_headers` follow it.                                                                        |
+| `YT_DLP_WEB_FFMPEG=remux` | Ship the remux core `bun run build:ffmpeg` compiled instead of ffmpeg.wasm: ~2.5 MiB instead of ~31 MiB, LGPL instead of GPL. Run the command first.      |
+| `YT_DLP_WEB_FFMPEG=0`     | Leave FFmpeg out: no merging of separate video and audio, and no GPL code shipped.                                                                        |
 
 `build/` is the whole site. `build/_headers` holds its security headers for hosts that read that
 file.
@@ -102,15 +103,17 @@ The app, `/relay` and `/solve` then share one origin. The CSP's `connect-src` is
 there is no CORS, and `build/_headers` applies to every page.
 
 ```bash
-YT_DLP_WEB_FFMPEG=0 bun run build   # no VITE_RELAY_URL: the relay is same-origin
+bun run build:ffmpeg                    # the remux core, once
+YT_DLP_WEB_FFMPEG=remux bun run build   # no VITE_RELAY_URL: the relay is same-origin
 ```
 
 Uncomment the `assets` block in `worker/wrangler.jsonc`, then run `bun run worker:deploy`.
 `run_worker_first` routes `/relay` and `/solve` to the Worker; everything else is a static asset,
 and unknown paths get the app's `404.html`.
 
-ffmpeg.wasm has to stay out. Workers Static Assets caps a file at 25 MiB and its wasm is 30.7 MiB,
-so Wrangler refuses the upload if it is there. The page then says merging is unavailable.
+ffmpeg.wasm cannot come along: Workers Static Assets caps a file at 25 MiB and its wasm is
+30.7 MiB, so Wrangler refuses the upload. The remux core's wasm is 2.5 MiB. Build with
+`YT_DLP_WEB_FFMPEG=0` instead to ship no FFmpeg at all; the page then says merging is unavailable.
 
 ## Checking a deployment
 

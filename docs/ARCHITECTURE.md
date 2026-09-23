@@ -35,7 +35,7 @@ page (Svelte 5)                     src/routes/, src/lib/ui/
  └─ Library (runes)                 src/lib/storage/library.svelte.ts
      ├─ IndexedDB metadata          src/lib/storage/db.ts
      ├─ download worker ────────────▶ /relay   (ranged fetch → OPFS)   src/workers/download.worker.ts
-     └─ remux worker (on demand)    ffmpeg.wasm → OPFS                src/workers/remux.worker.ts
+     └─ remux worker (on demand)    FFmpeg → OPFS                     src/workers/remux.worker.ts
 
 Worker                              worker/src/
  ├─ /relay   relay.ts + policy.ts (allowlist, SSRF guard)
@@ -123,15 +123,23 @@ yt-dlp's `bv*+ba` would:
 The library downloads both parts, one after the other, under the item's lock, then asks the
 remux worker to merge them:
 
-- **What ffmpeg does.** It runs as ffmpeg.wasm's single-threaded core, so there is no
+- **What ffmpeg does.** It runs as a single-threaded FFmpeg core, so there is no
   SharedArrayBuffer and no cross-origin isolation. It stream-copies (`-c copy`) exactly one video
   and one audio stream; MP4 also gets `+faststart`.
+- **Which FFmpeg.** ffmpeg.wasm (`@ffmpeg/core`) by default. With `YT_DLP_WEB_FFMPEG=remux`, the
+  remux core that `bun run build:ffmpeg` compiles from FFmpeg master: every demuxer, muxer, parser
+  and bitstream filter, and no decoder, encoder or filter. Since FFmpeg 6.0 the `ffmpeg` program
+  needs threads, so the remux core's entry point is `ffmpeg/remux.c`: the stream-copy subset of
+  ffmpeg's command line, with ffmpeg's own stream setup and timestamp handling, on one thread.
+  `ffmpeg/pre.js` gives it `@ffmpeg/core`'s JavaScript interface, and both cores use the same file
+  names, so the worker and `mergeArgs()` serve either unchanged.
 - **Its files.** A small Emscripten filesystem (`src/lib/remux/handle-fs.ts`) maps ffmpeg's file
   I/O onto OPFS sync access handles, so nothing is buffered in memory, whatever the video's size.
   It exposes exactly three files.
-- **When it exists.** The core (~31 MiB) is fetched only when a merge starts, and the worker ends
+- **When it exists.** The core (~31 MiB of wasm for ffmpeg.wasm, ~2.5 MiB for the remux core) is
+  fetched only when a merge starts, and the worker ends
   when the last merge does.
-- **Leaving it out.** Builds with `YT_DLP_WEB_FFMPEG=0` leave ffmpeg.wasm out. A HEAD probe tells
+- **Leaving it out.** Builds with `YT_DLP_WEB_FFMPEG=0` leave FFmpeg out. A HEAD probe tells
   the page, which then says merging is unavailable.
 
 ## Security layers
@@ -151,20 +159,20 @@ In brief (see `SECURITY.md`):
 
 - `scripts/fetch-wheels.ts` downloads the pinned wheels into `.wheel-cache/`, verifying their
   SHA-256.
-- `scripts/sync-assets.ts` copies the wheels, the Pyodide runtime files and (unless
-  `YT_DLP_WEB_FFMPEG=0`) ffmpeg.wasm, with its GPL notice, into `static/`. None of these are
-  committed.
+- `scripts/sync-assets.ts` copies the wheels, the Pyodide runtime files and an FFmpeg core with
+  its license notice into `static/`: ffmpeg.wasm, the remux core with `YT_DLP_WEB_FFMPEG=remux`
+  (after `bun run build:ffmpeg`), or none with `YT_DLP_WEB_FFMPEG=0`. None of these are committed.
 - `scripts/write-headers.ts` writes `build/_headers` for the relay origin and base path that the
   build used.
 
 ## Testing
 
-| Layer                                               | How                                                                                                                                                                            |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Logic, runes classes, components                    | Vitest `unit` project (jsdom)                                                                                                                                                  |
-| yt-dlp in real Pyodide, with the real pinned wheels | Vitest `node` project, with fixture transports standing in for the network                                                                                                     |
-| ffmpeg.wasm merging                                 | Vitest `node` project: the real `@ffmpeg/core` through the real handle filesystem                                                                                              |
-| The `/solve` sandbox walls                          | real workerd, via Wrangler's test harness                                                                                                                                      |
-| The whole app                                       | Playwright: the built app under the deploy's headers, the **real** relay handler (`scripts/fixture-relay.ts`) with a fake video site upstream, on Chromium, Firefox and WebKit |
-| BrowserOS                                           | the same e2e suite, `bun run test:browseros`                                                                                                                                   |
-| Real YouTube                                        | `@live` tests against a deployed app, excluded by default                                                                                                                      |
+| Layer                                               | How                                                                                                                                                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logic, runes classes, components                    | Vitest `unit` project (jsdom)                                                                                                                                                                        |
+| yt-dlp in real Pyodide, with the real pinned wheels | Vitest `node` project, with fixture transports standing in for the network                                                                                                                           |
+| Merging with either FFmpeg core                     | Vitest `node` project: the real `@ffmpeg/core` and the real remux core through the real handle filesystem; the remux core on many codecs and containers, ffmpeg.wasm making and inspecting its media |
+| The `/solve` sandbox walls                          | real workerd, via Wrangler's test harness                                                                                                                                                            |
+| The whole app                                       | Playwright: the built app under the deploy's headers, the **real** relay handler (`scripts/fixture-relay.ts`) with a fake video site upstream, on Chromium, Firefox and WebKit                       |
+| BrowserOS                                           | the same e2e suite, `bun run test:browseros`                                                                                                                                                         |
+| Real YouTube                                        | `@live` tests against a deployed app, excluded by default                                                                                                                                            |
