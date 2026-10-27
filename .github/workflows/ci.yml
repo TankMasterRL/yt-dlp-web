@@ -32,10 +32,14 @@ jobs:
         # --ipc=host: Chromium can exhaust a container's default /dev/shm. Test
         # results (error context, traces of failed attempts) land on the runner.
         run: docker run --rm --ipc=host -v "$PWD/test-results:/app/test-results" yt-dlp-web-tests
-      - name: Keep the e2e results of a failed run
-        if: failure()
+      # Also when the job passed: a test that failed and then passed on retry
+      # leaves its first attempt here, and that is still a failure to explain.
+      # A run with no failed attempt leaves nothing to upload.
+      - name: Keep the e2e results of every failed attempt
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-results
           path: test-results/
+          if-no-files-found: ignore
           retention-days: 14

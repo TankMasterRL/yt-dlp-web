@@ -45,5 +45,7 @@ ENV E2E_BROWSERS=chromium,firefox,webkit
 
 # The e2e webServer builds the app and serves it on :4173 internally, so this
 # needs no network beyond what the tests stub. Run with --ipc=host: Chromium can
-# exhaust a container's default /dev/shm.
-CMD ["bash", "-c", "bun run format:check && bun run audit && bun run check && bun run test && bun run test:e2e && YT_DLP_WEB_FFMPEG=remux bun run test:e2e tests/e2e/merge.test.ts"]
+# exhaust a container's default /dev/shm. Playwright empties its output
+# directory when it starts, so the second run writes to its own: the first
+# run's traces of failed attempts survive for CI to upload.
+CMD ["bash", "-c", "bun run format:check && bun run audit && bun run check && bun run test && bun run test:e2e && YT_DLP_WEB_FFMPEG=remux bun run test:e2e tests/e2e/merge.test.ts --output test-results/remux"]
