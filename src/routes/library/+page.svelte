@@ -184,7 +184,7 @@
 								<button
 									type="button"
 									onclick={() => animate(item)}
-									aria-label="Make an animated GIF from {item.title}">GIF</button
+									aria-label="Make an animated image from {item.title}">Animate</button
 								>
 							{/if}
 							<button

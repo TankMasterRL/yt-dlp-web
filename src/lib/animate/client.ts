@@ -19,9 +19,16 @@ export interface EncodeOptions {
 }
 
 export type AnimateWork =
+	| { kind: 'probe' }
 	| { kind: 'begin'; options: EncodeOptions; samples: Uint8ClampedArray[] }
 	| { kind: 'frame'; pixels: Uint8ClampedArray }
 	| { kind: 'finish' };
+
+/** Which formats a worker can make here. */
+export type FormatSupport = Record<AnimationFormat, boolean>;
+
+/** A probe's answer, a finished file, or nothing (begin, frame). */
+export type AnimateResult = FormatSupport | Blob | null;
 
 export interface EncoderDeps {
 	spawn?: () => Endpoint & { terminate(): void };
@@ -35,7 +42,7 @@ const spawnWorker = () =>
  * the frames in flight and the encoder's tables are held only while used.
  */
 export function workerEncoder({ spawn = spawnWorker }: EncoderDeps = {}): AnimationEncoder {
-	const client = new WorkerClient<AnimateLoad, AnimateWork, Blob | null, never>(spawn());
+	const client = new WorkerClient<AnimateLoad, AnimateWork, AnimateResult, never>(spawn());
 	// A failed load rejects the call waiting on it; nothing else to report.
 	client.load({}).catch(() => {});
 	return {
@@ -48,7 +55,7 @@ export function workerEncoder({ spawn = spawnWorker }: EncoderDeps = {}): Animat
 		},
 		async finish() {
 			try {
-				return (await client.call({ kind: 'finish' }))!;
+				return (await client.call({ kind: 'finish' })) as Blob;
 			} finally {
 				client.terminate();
 			}
@@ -57,4 +64,21 @@ export function workerEncoder({ spawn = spawnWorker }: EncoderDeps = {}): Animat
 			client.terminate(new DOMException('The animation was cancelled', 'AbortError'));
 		}
 	};
+}
+
+/**
+ * Asks a worker which formats it can make: canvases that encode WebP, a
+ * WebCodecs AV1 encoder, CompressionStream. The worker, not the page,
+ * because the worker is where they are used.
+ */
+export async function workerFormats({
+	spawn = spawnWorker
+}: EncoderDeps = {}): Promise<FormatSupport> {
+	const client = new WorkerClient<AnimateLoad, AnimateWork, AnimateResult, never>(spawn());
+	try {
+		await client.load({});
+		return (await client.call({ kind: 'probe' })) as FormatSupport;
+	} finally {
+		client.terminate();
+	}
 }

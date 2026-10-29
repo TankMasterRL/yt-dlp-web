@@ -36,7 +36,7 @@ page (Svelte 5)                     src/routes/, src/lib/ui/
      ├─ IndexedDB metadata          src/lib/storage/db.ts
      ├─ download worker ────────────▶ /relay   (ranged fetch → OPFS)   src/workers/download.worker.ts
      ├─ remux worker (on demand)    FFmpeg → OPFS                     src/workers/remux.worker.ts
-     └─ GIF maker (library page)    <video> frames → animate worker   src/lib/animate/, src/workers/animate.worker.ts
+     └─ animations (library page)   <video> frames → animate worker   src/lib/animate/, src/workers/animate.worker.ts
 
 Worker                              worker/src/
  ├─ /relay   relay.ts + policy.ts (allowlist, SSRF guard)
@@ -143,10 +143,10 @@ remux worker to merge them:
 - **Leaving it out.** Builds with `YT_DLP_WEB_FFMPEG=0` leave FFmpeg out. A HEAD probe tells
   the page, which then says merging is unavailable.
 
-### Animated GIFs
+### Animated images
 
-Any video in the library can become a looping GIF (`src/lib/ui/AnimationDialog.svelte`). The
-dialog plays the file from a `blob:` URL, like the player, and lays two controls over it:
+Any video in the library can become a looping animation (`src/lib/ui/AnimationDialog.svelte`).
+The dialog plays the file from a `blob:` URL, like the player, and lays two controls over it:
 
 - **A time range**: two sliders on one track (`RangeSlider.svelte`). Dragging or keying an end
   shows that frame; dragging the space between them moves the whole range; Preview loops it.
@@ -154,25 +154,33 @@ dialog plays the file from a `blob:` URL, like the player, and lays two controls
   pixels. The stage has exactly the video's shape, so the box's percentages are the picture's.
 
 The rules both follow (clamping, minimum sizes, frame times, delays) are pure functions in
-`src/lib/animate/clip.ts`, and `AnimationEditor` (`editor.svelte.ts`) holds the choices and does
-the work:
+`src/lib/animate/clip.ts`, and `AnimationEditor` (`editor.svelte.ts`) holds the choices — range,
+crop, format, quality, frame rate, width — and does the work:
 
 - **Frames come from the browser's own decoder.** For each frame time the page seeks the
   `<video>`, draws the crop onto a canvas at the output size and reads the pixels back
   (`frames.ts`). Media elements exist only on the main thread, and whatever the browser can play
   it can animate, with no demuxer or decoder of the app's own and whichever FFmpeg the build
   ships, or none.
-- **The encoder is the app's own** (`gif.ts`, `quantize.ts`), run in the animate worker, which
-  exists only while a GIF is made. One palette serves the whole animation: a median cut over up
-  to 16 frames spread across the range, taken first (and not taken again). Ordered dithering keeps
-  still parts of the picture still, so after the first frame only the rectangle that changed is
-  stored, with its unchanged pixels transparent; a frame that changes nothing adds its delay to
-  the one before.
-- **Timing is exact to the centisecond** (GIF's unit): delays carry their rounding (30 fps is 3,
-  4, 3 …), and frame rates stop at 30, because browsers slow anything under 2 cs to 10 cs. At most
-  600 frames are made at once.
+- **The animate worker encodes them**, one worker per animation, gone once the file is out. When
+  the dialog opens, a worker is asked which formats this browser can make, and only those are
+  offered. Each format keeps its own time from the frame rate, exactly where its unit allows:
+
+| Format  | Encoder                                                                                                                                                                                       | Timing                         |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| GIF     | `gif.ts`, `quantize.ts`: one median-cut palette from up to 16 frames spread over the range (taken first, not taken again), ordered dithering, LZW, only the changed rectangle after frame one | centiseconds, rounding carried |
+| APNG    | `apng.ts`: per-row PNG filters, zlib by `CompressionStream`, only the changed rectangle (transparent where unchanged) after frame one                                                         | exact: delays in 1/fps         |
+| JPEG XL | `jxl.ts`: lossless modular mode written by hand — YCoCg, the gradient predictor, one MA-tree leaf per channel, prefix codes, runs as LZ77 copies, 256×256 groups                              | exact: ticks of 1/fps          |
+| WebP    | `webp.ts`: the browser's WebP encoder (`OffscreenCanvas.convertToBlob`) makes each frame a lossy VP8 still; the app muxes them (`VP8X`, `ANIM`, `ANMF`)                                       | milliseconds, rounding carried |
+| AVIF    | `avif.ts`, `av1.ts`: the browser's AV1 encoder (WebCodecs `VideoEncoder`); the app writes the AVIF image sequence (`ftyp`, `meta` with the first frame as the primary image, `moov`, `mdat`)  | exact: a timescale of fps      |
+
+In every format but AVIF (where the encoder decides), a frame that changes nothing adds its time
+to the one before. Frame rates stop at 30, because browsers slow GIF delays under 2 cs to
+10 cs, and at most 600 frames are made at once.
 
 The result is shown from a `blob:` URL and saved like a download; it is not kept in the library.
+Where the browser cannot show the format (most cannot show JPEG XL yet), the dialog says so
+instead of showing a broken image.
 
 ## Security layers
 
@@ -199,13 +207,13 @@ In brief (see `SECURITY.md`):
 
 ## Testing
 
-| Layer                                               | How                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Logic, runes classes, components                    | Vitest `unit` project (jsdom)                                                                                                                                                                                                                                                  |
-| yt-dlp in real Pyodide, with the real pinned wheels | Vitest `node` project, with fixture transports standing in for the network                                                                                                                                                                                                     |
-| Merging with either FFmpeg core                     | Vitest `node` project: the real `@ffmpeg/core` and the real remux core through the real handle filesystem; the remux core on many codecs and containers, ffmpeg.wasm making and inspecting its media                                                                           |
-| The GIF encoder                                     | Vitest: a strict test-only decoder (`tests/helpers/gif.ts`) on every GIF, and ffmpeg.wasm's GIF decoder as an independent second opinion (`gif.integration.test.ts`)                                                                                                           |
-| The `/solve` sandbox walls                          | real workerd, via Wrangler's test harness                                                                                                                                                                                                                                      |
-| The whole app                                       | Playwright: the built app under the deploy's headers, the **real** relay handler (`scripts/fixture-relay.ts`) with a fake video site upstream, on Chromium, Firefox and WebKit. A GIF made in the browser is checked frame by frame against ffmpeg.wasm's decoding of the clip |
-| BrowserOS                                           | the same e2e suite, `bun run test:browseros`                                                                                                                                                                                                                                   |
-| Real YouTube                                        | `@live` tests against a deployed app, excluded by default                                                                                                                                                                                                                      |
+| Layer                                               | How                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logic, runes classes, components                    | Vitest `unit` project (jsdom)                                                                                                                                                                                                                                                                                                                                        |
+| yt-dlp in real Pyodide, with the real pinned wheels | Vitest `node` project, with fixture transports standing in for the network                                                                                                                                                                                                                                                                                           |
+| Merging with either FFmpeg core                     | Vitest `node` project: the real `@ffmpeg/core` and the real remux core through the real handle filesystem; the remux core on many codecs and containers, ffmpeg.wasm making and inspecting its media                                                                                                                                                                 |
+| The animation encoders                              | Vitest, each format read back by a decoder that is not the app's: strict readers written from each spec (`tests/helpers/`), ffmpeg.wasm's GIF, APNG and WebP decoders and its MP4/AVIF demuxer, and jxl-oxide (WebAssembly) for JPEG XL                                                                                                                              |
+| The `/solve` sandbox walls                          | real workerd, via Wrangler's test harness                                                                                                                                                                                                                                                                                                                            |
+| The whole app                                       | Playwright: the built app under the deploy's headers, the **real** relay handler (`scripts/fixture-relay.ts`) with a fake video site upstream, on Chromium, Firefox and WebKit. Animations made in the browser are checked frame by frame against ffmpeg.wasm's decoding of the clip, and decoded by the browser itself (Chromium's JPEG XL decoder enabled by flag) |
+| BrowserOS                                           | the same e2e suite, `bun run test:browseros`                                                                                                                                                                                                                                                                                                                         |
+| Real YouTube                                        | `@live` tests against a deployed app, excluded by default                                                                                                                                                                                                                                                                                                            |

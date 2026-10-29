@@ -7,8 +7,9 @@
 		formatClipTime,
 		fullFrame
 	} from '$lib/animate/clip';
-	import { workerEncoder } from '$lib/animate/client';
+	import { workerEncoder, workerFormats, type FormatSupport } from '$lib/animate/client';
 	import { AnimationEditor } from '$lib/animate/editor.svelte';
+	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '$lib/animate/formats';
 	import { videoFrames, videoMetadata } from '$lib/animate/frames';
 	import { formatBytes } from '$lib/formats';
 	import type { LibraryItem } from '$lib/storage/db';
@@ -33,7 +34,25 @@
 	let playhead = $state(0);
 	let previewing = $state(false);
 	let resultUrl = $state<string | null>(null);
+	/** Whether the browser failed to show the result (most cannot show JPEG XL yet). */
+	let unshowable = $state(false);
+	/** Which formats this browser can make; null until its worker has said. */
+	let support = $state<FormatSupport | null>(null);
 	let frameRequest = 0;
+	const spec = $derived(FORMATS[editor.format]);
+
+	/** Whether the worker has said which formats it can make (for tests, as data-formats). */
+	let asked = $state<'asking' | 'known' | 'unknown'>('asking');
+
+	workerFormats().then(
+		(formats) => {
+			support = formats;
+			asked = 'known';
+			if (!formats[editor.format]) editor.format = 'gif';
+		},
+		// Without an answer every format stays on offer; making one says what is wrong.
+		() => (asked = 'unknown')
+	);
 
 	// The video plays from a blob: URL over the OPFS file (CSP media-src blob:).
 	$effect(() => {
@@ -51,12 +70,13 @@
 		};
 	});
 
-	// The finished GIF, shown from a blob: URL (CSP img-src blob:).
+	// The finished file, shown from a blob: URL (CSP img-src blob:).
 	$effect(() => {
 		const result = editor.result;
 		if (!result) return;
 		const url = URL.createObjectURL(result.blob);
 		resultUrl = url;
+		unshowable = false;
 		return () => {
 			URL.revokeObjectURL(url);
 			resultUrl = null;
@@ -107,10 +127,10 @@
 <dialog bind:this={dialog} {onclose} aria-labelledby="animate-title">
 	<header>
 		<div>
-			<h2 id="animate-title">Make an animated GIF</h2>
+			<h2 id="animate-title">Make an animated image</h2>
 			<p class="source">{item.title}</p>
 		</div>
-		<button type="button" onclick={() => dialog.close()} aria-label="Close the GIF maker"
+		<button type="button" onclick={() => dialog.close()} aria-label="Close the animation maker"
 			>Close</button
 		>
 	</header>
@@ -154,6 +174,27 @@
 			</p>
 			<div class="options">
 				<label>
+					Format
+					<select bind:value={editor.format} disabled={editor.rendering} data-formats={asked}>
+						{#each FORMAT_ORDER as format (format)}
+							<option value={format} disabled={support?.[format] === false}
+								>{FORMATS[format].label}{support?.[format] === false
+									? ' (not in this browser)'
+									: ''}</option
+							>
+						{/each}
+					</select>
+				</label>
+				{#if spec.lossy}
+					<label>
+						Quality
+						<select bind:value={editor.quality} disabled={editor.rendering}>
+							{#each QUALITY_CHOICES as quality (quality)}<option value={quality}>{quality}</option
+								>{/each}
+						</select>
+					</label>
+				{/if}
+				<label>
 					Frame rate
 					<select bind:value={editor.fps} disabled={editor.rendering}>
 						{#each FPS_CHOICES as fps (fps)}<option value={fps}>{fps} fps</option>{/each}
@@ -176,16 +217,17 @@
 					disabled={editor.rendering}>Reset crop</button
 				>
 			</div>
+			<p class="format-note">{spec.label}: {spec.note}</p>
 			<div class="make">
 				<p id="animate-summary" class="summary">
-					GIF: {editor.size.width} × {editor.size.height} px · {editor.frameCount} frames
+					{spec.label}: {editor.size.width} × {editor.size.height} px · {editor.frameCount} frames
 				</p>
 				{#if editor.rendering && editor.progress}
 					<progress max={editor.progress.total} value={editor.progress.done}></progress>
 					<span role="status">
 						{editor.progress.done < editor.progress.total
 							? `Taking frame ${editor.progress.done + 1} of ${editor.progress.total}…`
-							: 'Finishing the GIF…'}
+							: `Finishing the ${spec.label}…`}
 					</span>
 					<button type="button" onclick={() => editor.cancel()}>Cancel</button>
 				{:else}
@@ -194,7 +236,7 @@
 						class="primary"
 						onclick={create}
 						disabled={editor.tooLong}
-						aria-describedby="animate-summary">Create GIF</button
+						aria-describedby="animate-summary">Create {spec.label}</button
 					>
 				{/if}
 			</div>
@@ -209,26 +251,35 @@
 
 	{#if editor.result && resultUrl}
 		{@const result = editor.result}
+		{@const label = FORMATS[result.format].label}
 		<!-- It appears below the settings: bring it into view. -->
 		<section
 			class="result"
 			aria-labelledby="result-title"
 			{@attach (node) => node.scrollIntoView({ block: 'nearest' })}
 		>
-			<h3 id="result-title">Your GIF</h3>
-			<img
-				src={resultUrl}
-				alt="The animated GIF: {formatClipTime(result.range.start)} to {formatClipTime(
-					result.range.end
-				)} of the video"
-				width={result.width}
-				height={result.height}
-			/>
+			<h3 id="result-title">Your {label}</h3>
+			{#if unshowable}
+				<p class="note" data-unshowable>
+					This browser can't show {label} images. The file is fine: save it, and open it with a browser
+					or viewer that can.
+				</p>
+			{:else}
+				<img
+					src={resultUrl}
+					alt="The animated {label}: {formatClipTime(result.range.start)} to {formatClipTime(
+						result.range.end
+					)} of the video"
+					width={result.width}
+					height={result.height}
+					onerror={() => (unshowable = true)}
+				/>
+			{/if}
 			<p>
 				{result.width} × {result.height} px · {result.frames} frames · {result.duration.toFixed(1)} s
 				· {formatBytes(result.blob.size)}
 			</p>
-			<button type="button" class="primary" onclick={save}>Save GIF</button>
+			<button type="button" class="primary" onclick={save}>Save {label}</button>
 		</section>
 	{/if}
 </dialog>
@@ -326,6 +377,12 @@
 		border-radius: 8px;
 		border: 1px solid var(--border);
 		background: var(--surface);
+	}
+
+	.format-note {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.85rem;
 	}
 
 	.summary {
