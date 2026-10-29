@@ -15,6 +15,7 @@ Worker are as welcome as reports about the app.
 | Engine worker           | Pyodide + yt-dlp           | Pinned, hash-checked code that parses **untrusted** pages and JSON as data.                                              |
 | Download worker         | Ranged downloads into OPFS | Moves untrusted bytes; never interprets them.                                                                            |
 | Remux worker (opt-in)   | FFmpeg                     | Parses untrusted media inside WebAssembly; it can touch exactly three OPFS files. The remux core has no decoders at all. |
+| Animate worker          | GIF encoder                | Gets only RGBA pixels the browser has already decoded; no storage, no network.                                           |
 | Relay Worker `/relay`   | Cloudflare Worker          | A byte pipe: no secrets, no storage, no parsing.                                                                         |
 | Relay Worker `/solve`   | Dynamic Worker isolate     | Runs **untrusted** YouTube player JavaScript with no network and no bindings.                                            |
 
@@ -58,7 +59,7 @@ headers send these, generated from the same `csp.config.js`:
   `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' <relay origin>;
 require-trusted-types-for 'script'; trusted-types 'none'`.
 
-  The engine, download and remux workers run under it in e2e: `vite preview` sends exactly these
+  The engine, download, remux and animate workers run under it in e2e: `vite preview` sends exactly these
   headers.
 
 Where the rules end up:

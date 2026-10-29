@@ -1,6 +1,6 @@
 /**
  * The postMessage protocol every worker in this app speaks (engine, download,
- * remux) — the same shape as LiveTranslate-WebGPU's workers:
+ * remux, animate) — the same shape as LiveTranslate-WebGPU's workers:
  *
  *   → load                          ← progress* then ready | error (no id)
  *   → work {id}                     ← progress {id}* then result {id} | error {id}

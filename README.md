@@ -16,7 +16,8 @@ Browser (static app)
 ├─ engine worker ── Pyodide + yt-dlp ──sync XHR──▶ Worker /relay   (pages, APIs, player JS)
 │                                      ──sync XHR──▶ Worker /solve   (JS challenges, sandboxed)
 ├─ download worker ─ ranged fetches through /relay ──▶ OPFS (resumable)
-└─ remux worker ─── FFmpeg (WebAssembly), only when you merge ──▶ OPFS
+├─ remux worker ─── FFmpeg (WebAssembly), only when you merge ──▶ OPFS
+└─ animate worker ─ GIF encoder, only while it makes an animated GIF
 
 Cloudflare Worker: holds no secrets, stores nothing, parses nothing
 ├─ /relay  one browser request → one upstream request, host allowlist, never follows redirects
@@ -34,6 +35,10 @@ Cloudflare Worker: holds no secrets, stores nothing, parses nothing
   the _best_ quality, which usually comes as separate video and audio streams, the page offers a
   merge. That merge is a stream copy with FFmpeg compiled to WebAssembly, never a re-encode, and
   FFmpeg is only loaded when you ask for one.
+- **Animated GIFs from your videos.** Pick a stretch of any video in the library on a timeline,
+  drag the crop handles over the picture, choose the frame rate and width, and the page makes a
+  looping GIF. The browser decodes the frames itself, and a GIF encoder of the app's own (no
+  FFmpeg needed) writes them in a worker.
 
 Read on in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
