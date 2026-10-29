@@ -205,3 +205,50 @@ export function decodeApng(bytes: Uint8Array): DecodedApng {
 	}
 	return { width, height, colorType, plays, frames, dataChunks };
 }
+
+/** A still PNG, 8 bits per channel: RGBA pixels whatever its color type. */
+export function decodePng(bytes: Uint8Array): {
+	width: number;
+	height: number;
+	pixels: Uint8ClampedArray;
+} {
+	SIGNATURE.forEach((b, i) => {
+		if (bytes[i] !== b) throw new Error('not a PNG');
+	});
+	let at = 8;
+	let header: { width: number; height: number; colorType: number; depth: number } | null = null;
+	const data: Uint8Array[] = [];
+	while (at < bytes.length) {
+		const length = u32(bytes, at);
+		const type = new TextDecoder().decode(bytes.subarray(at + 4, at + 8));
+		const body = bytes.subarray(at + 8, at + 8 + length);
+		if (u32(bytes, at + 8 + length) !== crc32(bytes.subarray(at + 4, at + 8 + length))) {
+			throw new Error(`bad CRC in ${type}`);
+		}
+		at += 12 + length;
+		if (type === 'IHDR') {
+			header = { width: u32(body, 0), height: u32(body, 4), depth: body[8], colorType: body[9] };
+		} else if (type === 'IDAT') data.push(body);
+		else if (type === 'IEND') break;
+	}
+	if (!header) throw new Error('no IHDR');
+	const { width, height, colorType, depth } = header;
+	if (depth !== 8) throw new Error(`a ${depth}-bit PNG`);
+	const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+	if (!channels) throw new Error(`unexpected color type ${colorType}`);
+	const raw = unfilter(inflateSync(Buffer.concat(data)), width, height, channels);
+	const pixels = new Uint8ClampedArray(width * height * 4);
+	for (let i = 0; i < width * height; i++) {
+		const p = raw.subarray(i * channels, (i + 1) * channels);
+		const [r, g, b, a] =
+			channels === 1
+				? [p[0], p[0], p[0], 255]
+				: channels === 2
+					? [p[0], p[0], p[0], p[1]]
+					: channels === 3
+						? [p[0], p[1], p[2], 255]
+						: [p[0], p[1], p[2], p[3]];
+		pixels.set([r, g, b, a], i * 4);
+	}
+	return { width, height, pixels };
+}

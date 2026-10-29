@@ -2,6 +2,7 @@
 // Node's Blob, which reads back its bytes; nothing here touches the DOM.
 import { describe, expect, it, vi } from 'vitest';
 import { decodeGif } from '../../../tests/helpers/gif';
+import { decodeJxl } from '../../../tests/helpers/jxl';
 import { MAX_FRAMES, type Rect, type Size } from './clip';
 import { AnimationEditor, type AnimationEncoder } from './editor.svelte';
 import { ENCODERS, type FrameEncoder } from './encoder';
@@ -142,6 +143,20 @@ describe('AnimationEditor', () => {
 		);
 		expect(editor.result).toMatchObject({ format: 'apng', frames: 30, duration: 3 });
 		expect(editor.result!.blob.type).toBe('image/apng');
+	});
+
+	it('makes a lossless JPEG XL of the range, frame for frame', async () => {
+		const { editor } = setup();
+		editor.format = 'jxl';
+		editor.range = { start: 0.5, end: 1 };
+		editor.fps = 10;
+		editor.width = 64;
+		await editor.render(fakeSource());
+		const jxl = decodeJxl(new Uint8Array(await editor.result!.blob.arrayBuffer()));
+		expect(jxl).toMatchObject({ width: 64, height: 36, animated: true });
+		expect(jxl.frames.map((f) => [f.pixels[0], f.pixels[1], f.pixels[2]])).toEqual(
+			[5, 6, 7, 8, 9].map((tenths) => [tenths, 0, 0])
+		);
 	});
 
 	it('reports progress frame by frame', async () => {
