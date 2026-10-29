@@ -6,6 +6,7 @@ import {
 	MIN_SPAN,
 	animationFileName,
 	defaultRange,
+	delayAt,
 	dragCrop,
 	frameCount,
 	formatClipTime,
@@ -151,6 +152,12 @@ describe('frames', () => {
 		expect(Math.min(...frameDelays(100, 30))).toBeGreaterThanOrEqual(2);
 	});
 
+	it('gives each frame its delay in any unit, by its index alone', () => {
+		// Milliseconds at 30 fps: 33, 34, 33 …
+		expect([0, 1, 2, 3].map((i) => delayAt(i, 30, 1000))).toEqual([33, 34, 33, 33]);
+		expect([0, 1, 2].map((i) => delayAt(i, 12, 100))).toEqual(frameDelays(3, 12));
+	});
+
 	it('picks evenly spread frames to build the palette from', () => {
 		expect(sampleIndices(4, 16)).toEqual([0, 1, 2, 3]);
 		expect(sampleIndices(100, 5)).toEqual([0, 25, 50, 74, 99]);
@@ -196,11 +203,23 @@ describe('labels', () => {
 		expect(formatClipTime(3725.25)).toBe('1:02:05.3');
 	});
 
-	it('names the exported file after the video and the range', () => {
+	it('names the exported file after the video, the range and the format', () => {
 		expect(
-			animationFileName({ title: 'Big Buck: Fixture', formatId: '0' }, { start: 0.5, end: 1.5 })
+			animationFileName(
+				{ title: 'Big Buck: Fixture', formatId: '0' },
+				{ start: 0.5, end: 1.5 },
+				'gif'
+			)
 		).toBe('Big Buck_ Fixture (0.5s-1.5s) [0].gif');
-		const long = animationFileName({ title: 'x'.repeat(300), formatId: '1' }, { start: 0, end: 2 });
-		expect(long).toMatch(/ \(0\.0s-2\.0s\) \[1\]\.gif$/);
+		const long = animationFileName(
+			{ title: 'x'.repeat(300), formatId: '1' },
+			{ start: 0, end: 2 },
+			'jxl'
+		);
+		expect(long).toMatch(/ \(0\.0s-2\.0s\) \[1\]\.jxl$/);
+		// APNG files are PNG files: every viewer opens them, animated or not.
+		expect(animationFileName({ title: 't', formatId: '2' }, { start: 0, end: 1 }, 'apng')).toBe(
+			't (0.0s-1.0s) [2].png'
+		);
 	});
 });

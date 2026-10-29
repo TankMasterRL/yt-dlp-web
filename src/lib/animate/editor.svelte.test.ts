@@ -4,31 +4,33 @@ import { describe, expect, it, vi } from 'vitest';
 import { decodeGif } from '../../../tests/helpers/gif';
 import { MAX_FRAMES, type Rect, type Size } from './clip';
 import { AnimationEditor, type AnimationEncoder } from './editor.svelte';
+import { ENCODERS, type FrameEncoder } from './encoder';
 import type { FrameSource } from './frames';
-import { GifEncoder } from './gif';
-import { buildPalette } from './quantize';
 
-/** The real GIF encoder, in this thread, recording what it was asked. */
+/** The worker's real encoders, in this thread, recording what they were asked. */
 function inThreadEncoder() {
-	let gif: GifEncoder | null = null;
+	let encoder: FrameEncoder | null = null;
 	const calls: string[] = [];
-	const encoder: AnimationEncoder & { calls: string[] } = {
+	const spy: AnimationEncoder & { calls: string[] } = {
 		calls,
-		async begin(size, samples) {
-			calls.push(`begin ${size.width}x${size.height} from ${samples.length}`);
-			gif = new GifEncoder({ ...size, palette: buildPalette(samples) });
+		async begin(options, samples) {
+			const { format, width, height, fps, quality } = options;
+			calls.push(
+				`begin ${format} ${width}x${height} ${fps} fps q${quality} from ${samples.length}`
+			);
+			encoder = await ENCODERS[format](options, samples);
 		},
-		async frame(pixels, delay) {
-			calls.push(`frame ${delay}`);
-			gif!.addFrame(pixels, delay);
+		async frame(pixels) {
+			calls.push('frame');
+			await encoder!.add(pixels);
 		},
 		async finish() {
 			calls.push('finish');
-			return new Blob(gif!.finish(), { type: 'image/gif' });
+			return encoder!.finish();
 		},
 		close: vi.fn(() => void calls.push('close'))
 	};
-	return encoder;
+	return spy;
 }
 
 /** Frames whose red says when they were taken (tenths of a second) and green where. */
@@ -91,15 +93,23 @@ describe('AnimationEditor', () => {
 			new Set([JSON.stringify([editor.crop, { width: 160, height: 80 }])])
 		);
 		expect(encoders[0].calls).toEqual([
-			'begin 160x80 from 10',
-			...Array(10).fill('frame 10'),
+			'begin gif 160x80 10 fps q75 from 10',
+			...Array(10).fill('frame'),
 			'finish',
 			'close'
 		]);
 
 		const result = editor.result!;
-		expect(result).toMatchObject({ width: 160, height: 80, frames: 10, duration: 1 });
+		expect(result).toMatchObject({
+			width: 160,
+			height: 80,
+			frames: 10,
+			duration: 1,
+			format: 'gif'
+		});
+		expect(result.blob.type).toBe('image/gif');
 		const gif = decodeGif(new Uint8Array(await result.blob.arrayBuffer()));
+		expect(gif.frames.map((f) => f.delay)).toEqual(Array(10).fill(10));
 		expect(gif.frames.map((f) => [f.canvas[0], f.canvas[1]])).toEqual(
 			[5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((tenths) => [tenths, 100])
 		);
@@ -113,9 +123,25 @@ describe('AnimationEditor', () => {
 		editor.fps = 10;
 		const source = fakeSource();
 		await editor.render(source);
-		expect(encoders[0].calls[0]).toBe('begin 480x270 from 16');
+		expect(encoders[0].calls[0]).toBe('begin gif 480x270 10 fps q75 from 16');
 		expect(source.requests).toHaveLength(100);
 		expect(new Set(source.requests.map((r) => r.time)).size).toBe(100);
+	});
+
+	it('takes frames in order, with no palette, for formats of more colors', async () => {
+		const { editor, encoders } = setup();
+		editor.format = 'apng';
+		editor.quality = 90;
+		editor.range = { start: 0, end: 3 };
+		editor.fps = 10;
+		const source = fakeSource();
+		await editor.render(source);
+		expect(encoders[0].calls[0]).toBe('begin apng 480x270 10 fps q90 from 0');
+		expect(source.requests.map((r) => r.time)).toEqual(
+			Array.from({ length: 30 }, (_, i) => i / 10)
+		);
+		expect(editor.result).toMatchObject({ format: 'apng', frames: 30, duration: 3 });
+		expect(editor.result!.blob.type).toBe('image/apng');
 	});
 
 	it('reports progress frame by frame', async () => {

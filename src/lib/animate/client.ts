@@ -2,15 +2,25 @@
 import animateWorkerUrl from '../../workers/animate.worker.ts?worker&url';
 import { trustedWorkerUrl } from '$lib/trusted-types';
 import { WorkerClient, type Endpoint } from '$lib/workers/protocol';
-import type { Size } from './clip';
 import type { AnimationEncoder } from './editor.svelte';
+import type { AnimationFormat } from './formats';
 
-/** Nothing to fetch: the encoder is plain code, bundled with the worker. */
+/** Nothing to fetch: the encoders are plain code, bundled with the worker. */
 export type AnimateLoad = Record<string, never>;
 
+/** What an animation is made as. Frames come every 1/fps s; each encoder keeps its own time. */
+export interface EncodeOptions {
+	format: AnimationFormat;
+	width: number;
+	height: number;
+	fps: number;
+	/** 1 to 100, for lossy formats. */
+	quality: number;
+}
+
 export type AnimateWork =
-	| { kind: 'begin'; width: number; height: number; samples: Uint8ClampedArray[] }
-	| { kind: 'frame'; pixels: Uint8ClampedArray; delay: number }
+	| { kind: 'begin'; options: EncodeOptions; samples: Uint8ClampedArray[] }
+	| { kind: 'frame'; pixels: Uint8ClampedArray }
 	| { kind: 'finish' };
 
 export interface EncoderDeps {
@@ -21,7 +31,7 @@ const spawnWorker = () =>
 	new Worker(trustedWorkerUrl(animateWorkerUrl), { type: 'module', name: 'animate' });
 
 /**
- * One worker per animation, stopped once its GIF is out (or it is closed):
+ * One worker per animation, stopped once its file is out (or it is closed):
  * the frames in flight and the encoder's tables are held only while used.
  */
 export function workerEncoder({ spawn = spawnWorker }: EncoderDeps = {}): AnimationEncoder {
@@ -29,12 +39,12 @@ export function workerEncoder({ spawn = spawnWorker }: EncoderDeps = {}): Animat
 	// A failed load rejects the call waiting on it; nothing else to report.
 	client.load({}).catch(() => {});
 	return {
-		async begin({ width, height }: Size, samples) {
+		async begin(options, samples) {
 			// Copied, not transferred: the editor may send the same pixels again as frames.
-			await client.call({ kind: 'begin', width, height, samples });
+			await client.call({ kind: 'begin', options, samples });
 		},
-		async frame(pixels, delay) {
-			await client.call({ kind: 'frame', pixels, delay }, [pixels.buffer]);
+		async frame(pixels) {
+			await client.call({ kind: 'frame', pixels }, [pixels.buffer]);
 		},
 		async finish() {
 			try {
