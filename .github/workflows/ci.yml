@@ -1,0 +1,45 @@
+# One job, one image: Dockerfile.test runs every gate (format, audit, check,
+# unit + integration, e2e on Chromium, Firefox and WebKit) exactly as
+# `bun run test:docker` does locally. Its base image tag must match the
+# @playwright/test version in bun.lock.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the test image
+        run: docker build -f Dockerfile.test -t yt-dlp-web-tests .
+      - name: Format, audit, check, unit + integration, e2e (Chromium, Firefox, WebKit)
+        # --ipc=host: Chromium can exhaust a container's default /dev/shm. Test
+        # results (error context, traces of failed attempts) land on the runner.
+        run: docker run --rm --ipc=host -v "$PWD/test-results:/app/test-results" yt-dlp-web-tests
+      # Also when the job passed: a test that failed and then passed on retry
+      # leaves its first attempt here, and that is still a failure to explain.
+      # A run with no failed attempt leaves nothing to upload.
+      - name: Keep the e2e results of every failed attempt
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14

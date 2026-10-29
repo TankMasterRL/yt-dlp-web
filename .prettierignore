@@ -1,0 +1,12 @@
+node_modules/
+build/
+.svelte-kit/
+.wheel-cache/
+.ffmpeg-build/
+static/pyodide/
+static/wheels/
+bun.lock
+*.py
+test-results/
+playwright-report/
+tests/fixtures/**/*.bin

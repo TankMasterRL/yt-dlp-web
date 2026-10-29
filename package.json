@@ -1,0 +1,56 @@
+{
+	"name": "yt-dlp-web",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Run yt-dlp in the browser via Pyodide — SvelteKit + Bun, with a Cloudflare Worker relay and a local OPFS download library.",
+	"type": "module",
+	"engines": {
+		"node": ">=22.13"
+	},
+	"scripts": {
+		"assets": "bun scripts/fetch-wheels.ts && bun scripts/sync-assets.ts",
+		"dev": "bun run assets && vite dev",
+		"build": "bun run assets && vite build && bun scripts/write-headers.ts",
+		"preview": "vite preview",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc -p worker/tsconfig.json && tsc -p scripts/tsconfig.json",
+		"test": "vitest run",
+		"test:unit": "vitest",
+		"test:e2e": "playwright test",
+		"test:browseros": "BROWSEROS=1 playwright test --project=browseros",
+		"test:docker": "docker build -f Dockerfile.test -t yt-dlp-web-tests . && docker run --rm --ipc=host yt-dlp-web-tests",
+		"fetch:wheels": "bun scripts/fetch-wheels.ts",
+		"build:ffmpeg": "bun scripts/build-ffmpeg.ts",
+		"update:ytdlp": "bun scripts/update-ytdlp.ts",
+		"worker:dev": "wrangler dev --config worker/wrangler.jsonc",
+		"worker:deploy": "wrangler deploy --config worker/wrangler.jsonc",
+		"screenshot": "bun scripts/readme-screenshot.ts",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"audit": "bun audit --audit-level=moderate"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20261027.1",
+		"@playwright/test": "1.61.1",
+		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/kit": "^2.70.3",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"@testing-library/jest-dom": "^6.9.1",
+		"@testing-library/svelte": "^5.4.2",
+		"@types/bun": "^1.4.2",
+		"@types/node": "^22.20.4",
+		"fake-indexeddb": "^6.2.5",
+		"jsdom": "^29.1.1",
+		"prettier": "^3.9.8",
+		"prettier-plugin-svelte": "^4.1.1",
+		"svelte": "^5.57.1",
+		"svelte-check": "^4.7.6",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.5",
+		"vitest": "^4.1.12",
+		"wrangler": "^4.153.0"
+	},
+	"dependencies": {
+		"@ffmpeg/core": "0.12.10",
+		"pyodide": "314.0.7"
+	}
+}

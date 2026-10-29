@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# SvelteKit / Vite
+.svelte-kit/
+build/
+.vite/
+vite.config.*.timestamp-*
+
+# Build artifacts fetched or copied at install time — never committed
+.wheel-cache/
+static/wheels/
+static/pyodide/
+static/ffmpeg/
+# bun run build:ffmpeg: FFmpeg's source, the build, the remux core (and emsdk, if it installed one)
+.ffmpeg-build/
+
+# Cloudflare
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+
+# Tests
+test-results/
+playwright-report/
+blob-report/
+coverage/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+*.log

@@ -1,0 +1,3 @@
+# Copy to worker/.dev.vars for `bun run worker:dev`: the local relay then admits
+# the dev server (5173) and `bun run preview` (4173).
+ALLOWED_ORIGINS="http://localhost:5173,http://localhost:4173"

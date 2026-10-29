@@ -1,0 +1,46 @@
+# yt-dlp-web behind Caddy: the static build, plus the security headers that a
+# <meta> CSP cannot carry (frame-ancestors, the workers' own CSP, …).
+# GENERATED from csp.config.js by `bun scripts/write-headers.ts --caddyfile`:
+# edit csp.config.js and regenerate — a test fails when this file drifts.
+#
+#   VITE_RELAY_URL=https://relay.example.workers.dev bun run build
+#   SITE_ADDRESS=ytdlp.example.org RELAY_ORIGIN=https://relay.example.workers.dev \
+#     caddy run --config deploy/Caddyfile
+#
+# RELAY_ORIGIN is the origin of the VITE_RELAY_URL the app was built with (leave
+# it unset when the relay shares this origin). Build without BASE_PATH: this
+# serves the app from the site root.
+
+{$SITE_ADDRESS:localhost} {
+	root * {$SITE_ROOT:build}
+	encode zstd gzip
+
+	@headers1 path /_app/immutable/workers/*
+	header @headers1 {
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'none'; object-src 'none', default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' {$RELAY_ORIGIN}; require-trusted-types-for 'script'; trusted-types 'none'"
+	}
+	@headers2 not path /_app/immutable/workers/*
+	header @headers2 {
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+	}
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Permissions-Policy "accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()"
+		Strict-Transport-Security "max-age=31536000"
+	}
+	@headers3 path /_app/immutable/*
+	header @headers3 {
+		Cache-Control "public, max-age=31536000, immutable"
+	}
+
+	file_server
+	# Deep links SvelteKit did not prerender get the app's fallback page.
+	handle_errors 404 {
+		rewrite * /404.html
+		file_server
+	}
+}

@@ -1,0 +1,36 @@
+{
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "yt-dlp-web",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-01",
+	"observability": { "enabled": true },
+	"vars": {
+		// Origins (besides this Worker's own) whose pages may use the relay. Set this
+		// to wherever the app is hosted; for local development put
+		// ALLOWED_ORIGINS="http://localhost:5173,http://localhost:4173" in .dev.vars.
+		"ALLOWED_ORIGINS": "https://tankmasterrl.github.io"
+		// ALLOWED_HOSTS defaults to the hosts YouTube extraction needs (src/config.ts).
+		// Widen it deliberately, host by host — never to a bare wildcard.
+	},
+	// Per-client-IP request budget. One extraction is ~5–10 requests; a 1 GB
+	// download in 10 MB chunks is ~100.
+	"ratelimits": [
+		{ "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 600, "period": 60 } }
+	],
+	// All-in-one deploy: this Worker also serves the app, so the app, /relay and
+	// /solve share one origin (connect-src 'self', no CORS) and build/_headers
+	// applies. Build WITHOUT VITE_RELAY_URL and WITHOUT ffmpeg.wasm (Static Assets
+	// caps files at 25 MiB; its wasm is 30.7 MiB), uncomment, `bun run worker:deploy`:
+	//   YT_DLP_WEB_FFMPEG=0 bun run build
+	// "assets": {
+	// 	"directory": "../build",
+	// 	"binding": "ASSETS",
+	// 	"run_worker_first": ["/relay", "/solve"],
+	// 	"not_found_handling": "404-page"
+	// },
+	// /solve runs YouTube's player JS in a network-severed Dynamic Worker isolate.
+	// Worker Loaders need a Workers Paid plan: on the Free plan, delete this
+	// block — the relay still works, /solve answers 501, and yt-dlp falls back to
+	// YouTube clients that need no JS challenge solving (fewer formats).
+	"worker_loaders": [{ "binding": "LOADER" }]
+}
