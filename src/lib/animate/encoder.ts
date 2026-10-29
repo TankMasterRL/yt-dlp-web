@@ -11,6 +11,7 @@ import { FORMATS, type AnimationFormat } from './formats';
 import { GifEncoder } from './gif';
 import { JxlEncoder } from './jxl';
 import { buildPalette } from './quantize';
+import { WebpEncoder, canvasWebpEncoder } from './webp';
 
 /** One animation being made. */
 export interface FrameEncoder {
@@ -39,7 +40,13 @@ export const ENCODERS: Record<AnimationFormat, EncoderFactory> = {
 			finish: () => new Blob(gif.finish(), { type: FORMATS.gif.mime })
 		};
 	},
-	webp: unsupported('webp'),
+	webp({ width, height, fps, quality }) {
+		const webp = new WebpEncoder({ width, height, fps, encodeStill: canvasWebpEncoder(quality) });
+		return {
+			add: (pixels) => webp.addFrame(pixels),
+			finish: () => new Blob(webp.finish(), { type: FORMATS.webp.mime })
+		};
+	},
 	apng({ width, height, fps }) {
 		const apng = new ApngEncoder({ width, height, fps });
 		return {
