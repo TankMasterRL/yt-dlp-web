@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { seek, videoFrames, videoMetadata, type FrameCanvas, type SeekableVideo } from './frames';
 
-/** A media element that seeks (asynchronously, like a real one) and can fail. */
+/**
+ * A media element that seeks (asynchronously, like a real one) and can fail.
+ * `shown` is the time of the picture on screen, which is what a canvas draws.
+ */
 class FakeVideo extends EventTarget implements SeekableVideo {
 	#time = 0;
+	shown = 0;
 	seeking = false;
 	readyState = 4;
 	error: { code: number; message: string } | null = null;
@@ -27,7 +31,13 @@ class FakeVideo extends EventTarget implements SeekableVideo {
 			if (!Number.isFinite(this.duration) && time > 2) this.duration = 2;
 			this.seeking = false;
 			this.dispatchEvent(new Event('seeked'));
+			this.present();
 		}, 1);
+	}
+
+	/** Puts the seeked picture on screen (without frame callbacks, at once). */
+	protected present() {
+		this.shown = this.#time;
 	}
 
 	fail(code: number, message = '') {
@@ -36,7 +46,31 @@ class FakeVideo extends EventTarget implements SeekableVideo {
 	}
 }
 
-/** A canvas whose pixels say when they were drawn: red = what time the video was at. */
+/**
+ * A video that, like Chromium's, can report `seeked` before the new picture
+ * is on screen: it arrives `lag` ms later, with a frame callback — or never.
+ */
+class LaggingVideo extends FakeVideo {
+	callbacks: (() => void)[] = [];
+	constructor(readonly lag: number | null) {
+		super();
+	}
+
+	requestVideoFrameCallback(callback: () => void): number {
+		this.callbacks.push(callback);
+		return this.callbacks.length;
+	}
+
+	protected override present() {
+		if (this.lag === null) return;
+		setTimeout(() => {
+			super.present();
+			for (const callback of this.callbacks.splice(0)) callback();
+		}, this.lag);
+	}
+}
+
+/** A canvas whose pixels say what was on screen: red = the time of the picture shown. */
 function fakeCanvas(video: FakeVideo) {
 	const draws: unknown[][] = [];
 	const canvas: FrameCanvas & { draws: unknown[][] } = {
@@ -49,7 +83,7 @@ function fakeCanvas(video: FakeVideo) {
 			drawImage: (...args: unknown[]) => void draws.push(args.slice(1)),
 			getImageData: (_x: number, _y: number, width: number, height: number) => {
 				const data = new Uint8ClampedArray(width * height * 4);
-				for (let i = 0; i < data.length; i += 4) data[i] = video.currentTime * 100;
+				for (let i = 0; i < data.length; i += 4) data[i] = video.shown * 100;
 				return { data };
 			}
 		})
@@ -72,6 +106,25 @@ describe('videoFrames', () => {
 		expect(canvas.draws).toEqual([[10, 20, 320, 180, 0, 0, 160, 90]]);
 		expect(pixels).toHaveLength(160 * 90 * 4);
 		expect(pixels[0]).toBe(50);
+	});
+
+	it('waits for the new picture to be on screen, not just for the seek', async () => {
+		const video = new LaggingVideo(20);
+		const frames = videoFrames(
+			video as unknown as SeekableVideo & CanvasImageSource,
+			fakeCanvas(video)
+		);
+		const crop = { x: 0, y: 0, width: 4, height: 4 };
+		const pixels = await frames.frameAt(0.7, crop, { width: 2, height: 2 });
+		expect(pixels[0]).toBe(70);
+	});
+
+	it('takes the picture anyway when no new one is ever shown', async () => {
+		const video = new LaggingVideo(null);
+		video.shown = 0.3;
+		const started = performance.now();
+		await seek(video, 0.7, undefined, 30);
+		expect(performance.now() - started).toBeGreaterThanOrEqual(25);
 	});
 
 	it('does not seek to where the video already is', async () => {
