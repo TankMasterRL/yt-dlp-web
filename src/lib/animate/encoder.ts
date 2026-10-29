@@ -5,6 +5,7 @@
  */
 import type { WorkerHandlers } from '$lib/workers/protocol';
 import { ApngEncoder } from './apng';
+import { AvifEncoder, webCodecsAv1 } from './avif';
 import { delayAt } from './clip';
 import type { AnimateLoad, AnimateWork, EncodeOptions } from './client';
 import { FORMATS, type AnimationFormat } from './formats';
@@ -24,12 +25,6 @@ export type EncoderFactory = (
 	options: EncodeOptions,
 	samples: Uint8ClampedArray[]
 ) => FrameEncoder | Promise<FrameEncoder>;
-
-const unsupported =
-	(format: AnimationFormat): EncoderFactory =>
-	() => {
-		throw new Error(`${FORMATS[format].label} is not supported yet`);
-	};
 
 export const ENCODERS: Record<AnimationFormat, EncoderFactory> = {
 	gif({ width, height, fps }, samples) {
@@ -54,7 +49,15 @@ export const ENCODERS: Record<AnimationFormat, EncoderFactory> = {
 			finish: async () => new Blob(await apng.finish(), { type: FORMATS.apng.mime })
 		};
 	},
-	avif: unsupported('avif'),
+	async avif({ width, height, fps, quality }) {
+		const av1 = await webCodecsAv1({ width, height, fps, quality });
+		if (!av1) throw new Error("This browser can't encode AV1, which AVIF is made of");
+		const avif = new AvifEncoder({ width, height, fps, encoder: av1 });
+		return {
+			add: (pixels) => avif.addFrame(pixels),
+			finish: async () => new Blob(await avif.finish(), { type: FORMATS.avif.mime })
+		};
+	},
 	jxl({ width, height, fps }) {
 		const jxl = new JxlEncoder({ width, height, fps });
 		return {
