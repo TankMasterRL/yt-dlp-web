@@ -31,6 +31,8 @@ export interface Av1Output {
 	chunks: Av1Chunk[];
 	/** How the encoder turned RGB into YUV, when it says. */
 	colorSpace: VideoColorSpaceInit | null;
+	/** The encoder's own av1C record (WebCodecs' decoderConfig.description), when it gives one. */
+	description?: Uint8Array | null;
 }
 
 /** An AV1 encoder fed one RGBA frame at a time. */
@@ -133,14 +135,20 @@ export interface Sample {
 export function muxAvif(
 	{ width, height, timescale }: { width: number; height: number; timescale: number },
 	samples: Sample[],
-	colorSpace: VideoColorSpaceInit | null
+	colorSpace: VideoColorSpaceInit | null,
+	description: Uint8Array | null = null
 ): Uint8Array<ArrayBuffer>[] {
 	const first = samples[0];
-	const header = first && readObus(first.data).find((o) => o.type === OBU_SEQUENCE_HEADER);
-	if (!first?.sync || !header) {
-		throw new Error('An AVIF sequence must start with a key frame carrying its sequence header');
+	// The sequence header: in the first key frame (Chromium), or else in the
+	// config OBUs of the encoder's own av1C record.
+	const sequenceHeader = (data: Uint8Array | undefined) => {
+		const obu = data && readObus(data).find((o) => o.type === OBU_SEQUENCE_HEADER);
+		return obu ? data.subarray(obu.start, obu.end) : null;
+	};
+	const headerObu = sequenceHeader(first?.data) ?? sequenceHeader(description?.subarray(4));
+	if (!first?.sync || !headerObu) {
+		throw new Error('An AVIF sequence must start with a key frame and its sequence header');
 	}
-	const headerObu = first.data.subarray(header.start, header.end);
 	const sequence = parseSequenceHeader(headerObu);
 	const av1C = box('av1C', av1Config(headerObu));
 	// The bitstream's own colour description wins; then what the encoder said it did.
@@ -368,7 +376,7 @@ export class AvifEncoder {
 
 	/** The AVIF file's bytes, in order. */
 	async finish(): Promise<Uint8Array<ArrayBuffer>[]> {
-		const { chunks, colorSpace } = await this.#encoder.finish();
+		const { chunks, colorSpace, description = null } = await this.#encoder.finish();
 		const tick = 1e6 / this.#fps;
 		const end = this.#index * tick;
 		// Each sample lasts until the next one: a frame the encoder dropped lengthens the one before.
@@ -383,7 +391,8 @@ export class AvifEncoder {
 		return muxAvif(
 			{ width: this.#width, height: this.#height, timescale: this.#fps },
 			samples,
-			colorSpace
+			colorSpace,
+			description
 		);
 	}
 }
@@ -449,8 +458,14 @@ export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | 
 			const data = new Uint8Array(chunk.byteLength);
 			chunk.copyTo(data);
 			output.chunks.push({ data, key: chunk.type === 'key', timestamp: chunk.timestamp });
-			if (metadata?.decoderConfig?.colorSpace)
-				output.colorSpace = metadata.decoderConfig.colorSpace;
+			const config = metadata?.decoderConfig;
+			if (config?.colorSpace) output.colorSpace = config.colorSpace;
+			if (config?.description) {
+				const d = config.description;
+				output.description = ArrayBuffer.isView(d)
+					? new Uint8Array(d.buffer, d.byteOffset, d.byteLength).slice()
+					: new Uint8Array(d).slice();
+			}
 		},
 		error(e) {
 			failure = e;
@@ -474,9 +489,11 @@ export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | 
 			}
 			// Software AV1 is slower than taking frames: keep the queue (and its memory) short.
 			while (encoder.encodeQueueSize > MAX_QUEUE && !failure) {
-				await new Promise((resolve) =>
-					encoder.addEventListener('dequeue', resolve, { once: true })
-				);
+				// 'dequeue' says when; the timer re-checks where a browser never says.
+				await new Promise((resolve) => {
+					encoder.addEventListener('dequeue', resolve, { once: true });
+					setTimeout(resolve, 50);
+				});
 			}
 		},
 		async finish() {

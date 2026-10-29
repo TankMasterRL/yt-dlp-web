@@ -142,6 +142,26 @@ describe('AvifEncoder', () => {
 		expect([...avif.properties[1].data]).toEqual([0, 0, 0, 0, 3, 8, 8, 8]);
 	});
 
+	it('takes the sequence header from the encoder’s av1C where the stream leaves it out', async () => {
+		const description = av1Config(Uint8Array.from(SEQUENCE_HEADER));
+		const encoder: Av1Encoder = {
+			async encode() {},
+			async finish() {
+				return {
+					chunks: [{ data: Uint8Array.from(frameObu(0)), key: true, timestamp: 0 }],
+					colorSpace: null,
+					description
+				};
+			}
+		};
+		const avif = new AvifEncoder({ width: 64, height: 36, fps: 10, encoder });
+		await avif.addFrame(pixels(64, 36));
+		const chunks = await avif.finish();
+		const file = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+		chunks.reduce((at, c) => (file.set(c, at), at + c.length), 0);
+		expect([...readAvif(file).track.av1C]).toEqual([...description]);
+	});
+
 	it('refuses a stream that does not start with a key frame and its sequence header', async () => {
 		const noHeader: Av1Encoder = {
 			async encode() {},
