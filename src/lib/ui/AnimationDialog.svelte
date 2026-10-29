@@ -100,7 +100,7 @@
 
 	async function save() {
 		const result = editor.result;
-		if (result) await saveFile(result.blob, animationFileName(item, result.range));
+		if (result) await saveFile(result.blob, animationFileName(item, result.range, result.format));
 	}
 </script>
 

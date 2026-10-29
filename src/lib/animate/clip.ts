@@ -7,6 +7,7 @@
  */
 import type { LibraryItem } from '$lib/storage/db';
 import { exportFileName } from '$lib/storage/present';
+import { FORMATS, type AnimationFormat } from './formats';
 
 /** A region of the video frame, in whole source pixels. */
 export interface Rect {
@@ -127,13 +128,19 @@ export function frameTimes(range: TimeRange, fps: number): number[] {
 }
 
 /**
- * Each frame's delay in centiseconds, GIF's unit. 1/fps is rarely a whole
- * number of them, so the rounding error is carried along (30 fps: 3, 4, 3 …)
- * and the animation runs as long as the range.
+ * Frame `index`'s delay in units of 1/`perSecond` s (GIF counts centiseconds,
+ * WebP milliseconds). 1/fps is rarely a whole number of them, so the rounding
+ * error is carried along (30 fps in centiseconds: 3, 4, 3 …) and the
+ * animation runs as long as the range.
  */
+export function delayAt(index: number, fps: number, perSecond: number): number {
+	const at = (i: number) => Math.round((i * perSecond) / fps);
+	return at(index + 1) - at(index);
+}
+
+/** The first `count` frames' delays in centiseconds, GIF's unit. */
 export function frameDelays(count: number, fps: number): number[] {
-	const at = (i: number) => Math.round((i * 100) / fps);
-	return Array.from({ length: count }, (_, i) => at(i + 1) - at(i));
+	return Array.from({ length: count }, (_, i) => delayAt(i, fps, 100));
 }
 
 /** Up to `max` indices into `count` frames, evenly spread, first and last included. */
@@ -160,8 +167,9 @@ export function formatClipTime(seconds: number): string {
 /** 'Title (0.5s-1.5s) [formatId].gif', the range kept even for the longest titles. */
 export function animationFileName(
 	item: Pick<LibraryItem, 'title' | 'formatId'>,
-	{ start, end }: TimeRange
+	{ start, end }: TimeRange,
+	format: AnimationFormat
 ): string {
 	const title = `${item.title.slice(0, 140)} (${start.toFixed(1)}s-${end.toFixed(1)}s)`;
-	return exportFileName({ title, formatId: item.formatId, ext: 'gif' });
+	return exportFileName({ title, formatId: item.formatId, ext: FORMATS[format].ext });
 }

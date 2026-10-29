@@ -6,7 +6,7 @@
  * video file — and touches no storage and no network. The page starts one
  * per animation and stops it when the GIF is out.
  */
-import { gifHandlers } from '$lib/animate/encoder';
+import { animateHandlers } from '$lib/animate/encoder';
 import { serveWorker } from '$lib/workers/protocol';
 
-serveWorker(gifHandlers());
+serveWorker(animateHandlers());
