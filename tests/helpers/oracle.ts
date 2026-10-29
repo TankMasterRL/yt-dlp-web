@@ -48,6 +48,12 @@ export function oracle(ffmpeg: NodeFFmpegCore) {
 		run,
 		rawFrames,
 		withFile,
+		/** Reads a file ffmpeg wrote, and removes it. */
+		take(path: string): Uint8Array {
+			const bytes = ffmpeg.FS.readFile(path);
+			ffmpeg.FS.unlink(path);
+			return bytes;
+		},
 		/** One second of an ffmpeg test source at 10 fps, as RGBA frames. */
 		lavfi(source: string, width: number, height: number): Uint8ClampedArray[] {
 			const frames = rawFrames(['-f', 'lavfi', '-i', source], width, height);
