@@ -170,6 +170,18 @@ export class WebpEncoder {
 	}
 }
 
+/** Whether this browser's canvases make WebP (some make PNG instead, quietly). */
+export async function canvasWebpSupported(): Promise<boolean> {
+	if (typeof OffscreenCanvas !== 'function') return false;
+	try {
+		const canvas = new OffscreenCanvas(1, 1);
+		canvas.getContext('2d');
+		return (await canvas.convertToBlob({ type: 'image/webp' })).type === 'image/webp';
+	} catch {
+		return false;
+	}
+}
+
 /**
  * The browser's WebP encoder, through an OffscreenCanvas (workers have one):
  * `quality` 1-100 as libwebp's quality factor. Some browsers' canvases cannot

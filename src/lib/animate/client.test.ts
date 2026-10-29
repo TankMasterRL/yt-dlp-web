@@ -3,13 +3,20 @@
 import { describe, expect, it } from 'vitest';
 import { decodeGif } from '../../../tests/helpers/gif';
 import { serveWorker } from '$lib/workers/protocol';
-import { workerEncoder, type AnimateLoad, type AnimateWork } from './client';
-import { animateHandlers } from './encoder';
+import {
+	workerEncoder,
+	workerFormats,
+	type AnimateLoad,
+	type AnimateResult,
+	type AnimateWork,
+	type FormatSupport
+} from './client';
+import { animateHandlers, probeFormats } from './encoder';
 
 /** The animate worker's real handlers behind a MessageChannel, and whether it was stopped. */
-function fakeWorker() {
+function fakeWorker(probe?: () => Promise<FormatSupport>) {
 	const { port1, port2 } = new MessageChannel();
-	serveWorker<AnimateLoad, AnimateWork, Blob | null, never>(animateHandlers(), port2);
+	serveWorker<AnimateLoad, AnimateWork, AnimateResult, never>(animateHandlers({ probe }), port2);
 	port2.start();
 	const state = { terminated: false };
 	const spawn = () =>
@@ -62,6 +69,26 @@ describe('workerEncoder', () => {
 		await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
 		await expect(encoder.finish()).rejects.toMatchObject({ name: 'AbortError' });
 		expect(state.terminated).toBe(true);
+	});
+});
+
+describe('workerFormats', () => {
+	it('asks a worker which formats it can make, then stops it', async () => {
+		const support = { gif: true, webp: true, apng: true, avif: false, jxl: true };
+		const { spawn, state } = fakeWorker(async () => support);
+		expect(await workerFormats({ spawn })).toEqual(support);
+		expect(state.terminated).toBe(true);
+	});
+
+	it('makes its own formats anywhere, and the browser’s only where it has the encoders', async () => {
+		// Node has CompressionStream, but no OffscreenCanvas or WebCodecs.
+		expect(await probeFormats()).toEqual({
+			gif: true,
+			webp: false,
+			apng: true,
+			avif: false,
+			jxl: true
+		});
 	});
 });
 

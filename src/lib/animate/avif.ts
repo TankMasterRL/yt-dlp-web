@@ -391,22 +391,19 @@ export class AvifEncoder {
 /** Most chunks in the encoder's queue before `encode` waits for it to catch up. */
 const MAX_QUEUE = 4;
 
-/**
- * The browser's AV1 encoder (WebCodecs). `quality` 1-100 becomes a quantizer
- * where the browser takes one (0 best, 63 smallest), a bitrate otherwise.
- * Null when this browser cannot encode AV1 at this size.
- */
-export async function webCodecsAv1({
-	width,
-	height,
-	fps,
-	quality
-}: {
+interface Av1Settings {
 	width: number;
 	height: number;
 	fps: number;
+	/** 1-100. */
 	quality: number;
-}): Promise<Av1Encoder | null> {
+}
+
+/**
+ * The encoder configuration this browser accepts for AV1 at this size: by
+ * quantizer where it can, by bitrate otherwise. Null when it cannot encode AV1.
+ */
+async function av1Encoding({ width, height, fps, quality }: Av1Settings) {
 	if (typeof VideoEncoder !== 'function') return null;
 	const base: VideoEncoderConfig = {
 		codec: 'av01.0.08M.08',
@@ -422,14 +419,28 @@ export async function webCodecsAv1({
 		bitrateMode: 'variable',
 		bitrate: Math.round(width * height * fps * 0.4 * (quality / 100) ** 3)
 	};
-	let config: VideoEncoderConfig | null = null;
-	for (const candidate of [byQuantizer, byBitrate]) {
-		if ((await VideoEncoder.isConfigSupported(candidate).catch(() => null))?.supported) {
-			config = candidate;
-			break;
-		}
+	for (const config of [byQuantizer, byBitrate]) {
+		const support = await VideoEncoder.isConfigSupported(config).catch(() => null);
+		if (support?.supported) return { config, usesQuantizer: config === byQuantizer };
 	}
-	if (!config) return null;
+	return null;
+}
+
+/** Whether this browser can encode AV1 (asked at a typical size). */
+export async function av1Supported(): Promise<boolean> {
+	return (await av1Encoding({ width: 480, height: 270, fps: 12, quality: 75 })) !== null;
+}
+
+/**
+ * The browser's AV1 encoder (WebCodecs). `quality` 1-100 becomes a quantizer
+ * where the browser takes one (0 best, 63 smallest), a bitrate otherwise.
+ * Null when this browser cannot encode AV1 at this size.
+ */
+export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | null> {
+	const encoding = await av1Encoding(settings);
+	if (!encoding) return null;
+	const { config, usesQuantizer } = encoding;
+	const { width, height, fps, quality } = settings;
 	const quantizer = Math.round(((100 - quality) * 63) / 100);
 	const output: Av1Output = { chunks: [], colorSpace: null };
 	let failure: Error | null = null;
@@ -446,7 +457,6 @@ export async function webCodecsAv1({
 		}
 	});
 	encoder.configure(config);
-	const usesQuantizer = config === byQuantizer;
 	return {
 		async encode(pixels, timestamp, keyFrame) {
 			if (failure) throw failure;

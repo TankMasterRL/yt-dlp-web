@@ -9,15 +9,15 @@ Worker are as welcome as reports about the app.
 
 ## What runs where
 
-| Where                   | What                       | Trust                                                                                                                    |
-| ----------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Page (the app's origin) | Svelte UI                  | Runs only the app's own code: no inline scripts beyond SvelteKit's hashed bootstrap, Trusted Types enforced.             |
-| Engine worker           | Pyodide + yt-dlp           | Pinned, hash-checked code that parses **untrusted** pages and JSON as data.                                              |
-| Download worker         | Ranged downloads into OPFS | Moves untrusted bytes; never interprets them.                                                                            |
-| Remux worker (opt-in)   | FFmpeg                     | Parses untrusted media inside WebAssembly; it can touch exactly three OPFS files. The remux core has no decoders at all. |
-| Animate worker          | GIF encoder                | Gets only RGBA pixels the browser has already decoded; no storage, no network.                                           |
-| Relay Worker `/relay`   | Cloudflare Worker          | A byte pipe: no secrets, no storage, no parsing.                                                                         |
-| Relay Worker `/solve`   | Dynamic Worker isolate     | Runs **untrusted** YouTube player JavaScript with no network and no bindings.                                            |
+| Where                   | What                                                                           | Trust                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Page (the app's origin) | Svelte UI                                                                      | Runs only the app's own code: no inline scripts beyond SvelteKit's hashed bootstrap, Trusted Types enforced.             |
+| Engine worker           | Pyodide + yt-dlp                                                               | Pinned, hash-checked code that parses **untrusted** pages and JSON as data.                                              |
+| Download worker         | Ranged downloads into OPFS                                                     | Moves untrusted bytes; never interprets them.                                                                            |
+| Remux worker (opt-in)   | FFmpeg                                                                         | Parses untrusted media inside WebAssembly; it can touch exactly three OPFS files. The remux core has no decoders at all. |
+| Animate worker          | Animation encoders: its own (GIF, APNG, JPEG XL) and the browser's (WebP, AV1) | Gets only RGBA pixels the browser has already decoded; no storage, no network.                                           |
+| Relay Worker `/relay`   | Cloudflare Worker                                                              | A byte pipe: no secrets, no storage, no parsing.                                                                         |
+| Relay Worker `/solve`   | Dynamic Worker isolate                                                         | Runs **untrusted** YouTube player JavaScript with no network and no bindings.                                            |
 
 Untrusted JavaScript never runs in the app's origin: YouTube's player code is evaluated only in the
 `/solve` isolate.

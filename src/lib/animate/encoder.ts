@@ -5,14 +5,20 @@
  */
 import type { WorkerHandlers } from '$lib/workers/protocol';
 import { ApngEncoder } from './apng';
-import { AvifEncoder, webCodecsAv1 } from './avif';
+import { AvifEncoder, av1Supported, webCodecsAv1 } from './avif';
 import { delayAt } from './clip';
-import type { AnimateLoad, AnimateWork, EncodeOptions } from './client';
+import type {
+	AnimateLoad,
+	AnimateResult,
+	AnimateWork,
+	EncodeOptions,
+	FormatSupport
+} from './client';
 import { FORMATS, type AnimationFormat } from './formats';
 import { GifEncoder } from './gif';
 import { JxlEncoder } from './jxl';
 import { buildPalette } from './quantize';
-import { WebpEncoder, canvasWebpEncoder } from './webp';
+import { WebpEncoder, canvasWebpEncoder, canvasWebpSupported } from './webp';
 
 /** One animation being made. */
 export interface FrameEncoder {
@@ -67,14 +73,26 @@ export const ENCODERS: Record<AnimationFormat, EncoderFactory> = {
 	}
 };
 
-export function animateHandlers(
-	encoders: Record<AnimationFormat, EncoderFactory> = ENCODERS
-): WorkerHandlers<AnimateLoad, AnimateWork, Blob | null, never> {
+/** Which formats this context can make: its own encoders always, the browser's where it has them. */
+export async function probeFormats(): Promise<FormatSupport> {
+	const [webp, avif] = await Promise.all([canvasWebpSupported(), av1Supported()]);
+	return { gif: true, webp, apng: typeof CompressionStream === 'function', avif, jxl: true };
+}
+
+export function animateHandlers({
+	encoders = ENCODERS,
+	probe = probeFormats
+}: {
+	encoders?: Record<AnimationFormat, EncoderFactory>;
+	probe?: () => Promise<FormatSupport>;
+} = {}): WorkerHandlers<AnimateLoad, AnimateWork, AnimateResult, never> {
 	let encoder: FrameEncoder | null = null;
 	return {
 		async load() {},
 		async work(work) {
 			switch (work.kind) {
+				case 'probe':
+					return probe();
 				case 'begin':
 					encoder = await encoders[work.options.format](work.options, work.samples);
 					return null;
