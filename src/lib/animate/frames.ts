@@ -21,6 +21,8 @@ export interface SeekableVideo extends EventTarget {
 	readonly duration: number;
 	readonly videoWidth: number;
 	readonly videoHeight: number;
+	/** Calls back once the next picture is on screen (HTMLVideoElement.requestVideoFrameCallback). */
+	requestVideoFrameCallback?(callback: () => void): number;
 }
 
 /** What this needs of a canvas and its 2D context. */
@@ -88,18 +90,43 @@ function until(video: SeekableVideo, event: string, signal?: AbortSignal): Promi
 	});
 }
 
-/** Shows the frame at `time`, once it is decoded. */
+/** How long to wait, after `seeked`, for the new picture to reach the screen. */
+const PRESENT_TIMEOUT_MS = 1000;
+
+/**
+ * Shows the frame at `time`: resolves once it is on screen, which is what a
+ * canvas draws. `seeked` alone is not enough — Chromium can fire it a few
+ * milliseconds before the new picture replaces the old one, and a frame taken
+ * then is the previous one. So where the browser reports pictures as they
+ * are shown (requestVideoFrameCallback), seek waits for that too; for at most
+ * `presentTimeout` ms after `seeked`, in case none is ever shown (a video
+ * off screen).
+ */
 export async function seek(
 	video: SeekableVideo,
 	time: number,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	presentTimeout = PRESENT_TIMEOUT_MS
 ): Promise<void> {
 	signal?.throwIfAborted();
 	// A seek to where the video already is may never report back.
 	if (video.currentTime === time && !video.seeking && video.readyState >= HAVE_CURRENT_DATA) return;
+	// Asked before seeking: the video is paused, so the next picture shown is the one sought.
+	const shown = video.requestVideoFrameCallback
+		? new Promise<void>((resolve) => video.requestVideoFrameCallback!(() => resolve()))
+		: null;
 	const seeked = until(video, 'seeked', signal);
 	video.currentTime = time;
 	await seeked;
+	if (shown) {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		await Promise.race([
+			shown,
+			new Promise((resolve) => (timer = setTimeout(resolve, presentTimeout)))
+		]);
+		clearTimeout(timer);
+		signal?.throwIfAborted();
+	}
 }
 
 /** The video's size and length, waiting for its metadata if need be. */
