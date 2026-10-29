@@ -9,6 +9,7 @@ import { delayAt } from './clip';
 import type { AnimateLoad, AnimateWork, EncodeOptions } from './client';
 import { FORMATS, type AnimationFormat } from './formats';
 import { GifEncoder } from './gif';
+import { JxlEncoder } from './jxl';
 import { buildPalette } from './quantize';
 
 /** One animation being made. */
@@ -47,7 +48,13 @@ export const ENCODERS: Record<AnimationFormat, EncoderFactory> = {
 		};
 	},
 	avif: unsupported('avif'),
-	jxl: unsupported('jxl')
+	jxl({ width, height, fps }) {
+		const jxl = new JxlEncoder({ width, height, fps });
+		return {
+			add: (pixels) => jxl.addFrame(pixels),
+			finish: () => new Blob(jxl.finish(), { type: FORMATS.jxl.mime })
+		};
+	}
 };
 
 export function animateHandlers(
