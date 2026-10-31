@@ -12,8 +12,12 @@ import {
 } from './avif';
 import { rgbaToI420, type I420Frame } from './yuv';
 
-/** Chromium's sequence header OBU for a 64×36 stream (see av1.test.ts). */
-const SEQUENCE_HEADER = [10, 12, 0, 0, 0, 2, 175, 241, 128, 52, 64, 67, 64, 97];
+/**
+ * A 64×36 stream's sequence header as Chromium writes it for the app's
+ * frames: their colour space, BT.709, sRGB, limited range (Chromium's own
+ * bytes are read in av1.test.ts).
+ */
+const SEQUENCE_HEADER = [...sequenceHeaderObu({ fullRange: false })];
 const TEMPORAL_DELIMITER = [0x12, 0];
 /** A frame OBU whose payload says which frame it was. */
 const frameObu = (n: number) => [(6 << 3) | 0b10, 2, 0xf0, n];
@@ -127,8 +131,8 @@ describe('AvifEncoder', () => {
 		expect(av1.frames[0]).toMatchObject({ codedWidth: 6, codedHeight: 4 });
 	});
 
-	// 'nclx', primaries BT.709, transfer sRGB, matrix BT.709, full range.
-	const NCLX_OF_THE_CONVERSION = [0x6e, 0x63, 0x6c, 0x78, 0, 1, 0, 13, 0, 1, 0x80];
+	// 'nclx', primaries BT.709, transfer sRGB, matrix BT.709, limited range.
+	const NCLX_OF_THE_CONVERSION = [0x6e, 0x63, 0x6c, 0x78, 0, 1, 0, 13, 0, 1, 0];
 
 	it('states the colour the frames were converted with, in nclx', async () => {
 		const avif = await encode(2, 10);
@@ -136,15 +140,16 @@ describe('AvifEncoder', () => {
 		expect([...avif.properties[3].data]).toEqual(NCLX_OF_THE_CONVERSION);
 	});
 
-	it('states it where the stream itself says nothing of colour (as Firefox’s did)', async () => {
-		const avif = await encode(2, 10, fakeAv1({ colour: { colorDescription: null } }));
+	it('states it where the stream itself says nothing of colour (as Firefox 151’s does)', async () => {
+		const colour = { colorDescription: null, fullRange: false };
+		const avif = await encode(2, 10, fakeAv1({ colour }));
 		expect([...avif.track.colr!]).toEqual(NCLX_OF_THE_CONVERSION);
 	});
 
 	it('refuses a stream whose encoder changed the colours it was given', async () => {
 		for (const colour of [
-			{ fullRange: false },
-			{ colorDescription: { primaries: 1, transfer: 13, matrix: 6 } }
+			{ fullRange: true },
+			{ colorDescription: { primaries: 1, transfer: 13, matrix: 6 }, fullRange: false }
 		]) {
 			await expect(encode(2, 10, fakeAv1({ colour }))).rejects.toThrow(/colours/);
 		}

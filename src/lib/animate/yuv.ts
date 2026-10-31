@@ -4,9 +4,11 @@
  * and may not say so truly — Firefox converts with BT.601, limited range, and
  * reports BT.709 — so the file's colours would be read back wrong.
  *
- * BT.709 coefficients at full range, the canvas's sRGB values as they are
- * (transfer: sRGB), each 2 × 2 block's chroma its mean colour (centre
- * sited, as AVIF reads 4:2:0 by default).
+ * BT.709 coefficients, the canvas's sRGB values as they are (transfer: sRGB),
+ * each 2 × 2 block's chroma its mean colour (centre sited, as AVIF reads
+ * 4:2:0 by default) — at limited range, the one every encoder's stream says:
+ * Chromium's writes the frame's colour space into it, Firefox 151's writes
+ * none, which AV1 reads as limited range.
  */
 
 /** How rgbaToI420 converts: the frames' colour space, and the AVIF's `colr`. */
@@ -14,7 +16,7 @@ export const I420_COLOR_SPACE = {
 	primaries: 'bt709',
 	transfer: 'iec61966-2-1',
 	matrix: 'bt709',
-	fullRange: true
+	fullRange: false
 } as const satisfies VideoColorSpaceInit;
 
 /** Colours as CICP code points (ITU-T H.273), with the range: what AV1 and AVIF's colr say. */
@@ -26,7 +28,7 @@ export interface Cicp {
 }
 
 /** I420_COLOR_SPACE in CICP: BT.709 primaries (1), sRGB transfer (13), BT.709 matrix (1). */
-export const I420_CICP: Cicp = { primaries: 1, transfer: 13, matrix: 1, fullRange: true };
+export const I420_CICP: Cicp = { primaries: 1, transfer: 13, matrix: 1, fullRange: false };
 
 export interface I420Frame {
 	/** The Y plane, then Cb and Cr at half the coded size each way. */
@@ -44,6 +46,10 @@ const KB = 0.0722;
 const KG = 1 - KR - KB;
 
 const byte = (v: number) => Math.min(255, Math.max(0, Math.round(v)));
+/** Limited range: luma 16-235, chroma 16-240 around 128, for R′G′B′ in 0-255. */
+const luma = (r: number, g: number, b: number) => KR * r + KG * g + KB * b;
+const Y = (l: number) => byte(16 + (219 * l) / 255);
+const C = (difference: number, k: number) => byte(128 + (224 * difference) / (255 * 2 * (1 - k)));
 
 export function rgbaToI420(rgba: Uint8ClampedArray, width: number, height: number): I420Frame {
 	if (rgba.length !== width * height * 4) {
@@ -63,7 +69,7 @@ export function rgbaToI420(rgba: Uint8ClampedArray, width: number, height: numbe
 	for (let y = 0; y < codedHeight; y++) {
 		for (let x = 0; x < codedWidth; x++) {
 			const p = at(x, y);
-			data[y * codedWidth + x] = byte(KR * rgba[p] + KG * rgba[p + 1] + KB * rgba[p + 2]);
+			data[y * codedWidth + x] = Y(luma(rgba[p], rgba[p + 1], rgba[p + 2]));
 		}
 	}
 	for (let y = 0; y < ch; y++) {
@@ -73,9 +79,9 @@ export function rgbaToI420(rgba: Uint8ClampedArray, width: number, height: numbe
 			const r = (rgba[p0] + rgba[p1] + rgba[p2] + rgba[p3]) / 4;
 			const g = (rgba[p0 + 1] + rgba[p1 + 1] + rgba[p2 + 1] + rgba[p3 + 1]) / 4;
 			const b = (rgba[p0 + 2] + rgba[p1 + 2] + rgba[p2 + 2] + rgba[p3 + 2]) / 4;
-			const luma = KR * r + KG * g + KB * b;
-			data[cb + y * cw + x] = byte(128 + (b - luma) / (2 * (1 - KB)));
-			data[cr + y * cw + x] = byte(128 + (r - luma) / (2 * (1 - KR)));
+			const l = luma(r, g, b);
+			data[cb + y * cw + x] = C(b - l, KB);
+			data[cr + y * cw + x] = C(r - l, KR);
 		}
 	}
 	return { data, width, height, codedWidth, codedHeight };

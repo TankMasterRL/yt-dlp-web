@@ -530,8 +530,9 @@ export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | 
 		async encode(i420, timestamp, keyFrame) {
 			if (failure) throw failure;
 			const { data, width, height, codedWidth, codedHeight } = i420;
-			// The colour space goes with every frame: both Chromium's encoder and
-			// Firefox's write the first frame's into the stream.
+			// The colour space goes with every frame. Chromium's encoder writes it
+			// into the stream; Firefox 151's writes none, which AV1 reads as the
+			// limited range these frames are in (see yuv.ts).
 			const frame = new VideoFrame(data, {
 				format: 'I420',
 				codedWidth,
