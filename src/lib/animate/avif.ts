@@ -8,8 +8,9 @@
  *   moov  one 'pict' track of every frame, in ticks of 1/fps, repeating forever
  *   mdat  the samples: each frame's temporal unit, minus its temporal delimiter
  *
- * The AV1 encoder is a seam: in the app it is WebCodecs' VideoEncoder
- * (`webCodecsAv1`), in tests a fake.
+ * The frames reach the AV1 encoder as I420 converted here (yuv.ts), so the
+ * file can state their colours exactly. The AV1 encoder is a seam: in the
+ * app it is WebCodecs' VideoEncoder (`webCodecsAv1`), in tests a fake.
  */
 import {
 	OBU_SEQUENCE_HEADER,
@@ -18,6 +19,7 @@ import {
 	readObus,
 	stripForIsobmff
 } from './av1';
+import { I420_CICP, I420_COLOR_SPACE, rgbaToI420, type Cicp, type I420Frame } from './yuv';
 
 export interface Av1Chunk {
 	/** One temporal unit, as the encoder made it. */
@@ -29,15 +31,13 @@ export interface Av1Chunk {
 
 export interface Av1Output {
 	chunks: Av1Chunk[];
-	/** How the encoder turned RGB into YUV, when it says. */
-	colorSpace: VideoColorSpaceInit | null;
 	/** The encoder's own av1C record (WebCodecs' decoderConfig.description), when it gives one. */
 	description?: Uint8Array | null;
 }
 
-/** An AV1 encoder fed one RGBA frame at a time. */
+/** An AV1 encoder fed one I420 frame at a time, in I420_COLOR_SPACE. */
 export interface Av1Encoder {
-	encode(pixels: Uint8ClampedArray, timestamp: number, keyFrame: boolean): Promise<void>;
+	encode(frame: I420Frame, timestamp: number, keyFrame: boolean): Promise<void>;
 	/** Every chunk, in order, once every frame is in. */
 	finish(): Promise<Av1Output>;
 }
@@ -96,29 +96,7 @@ const UNITY_MATRIX = fields(
 /** 'und', packed as ISO 639-2/T in three 5-bit letters. */
 const LANGUAGE_UNDETERMINED = 0x55c4;
 
-/** CICP code points (ITU-T H.273) for WebCodecs' colour space names. */
-const PRIMARIES: Record<string, number> = {
-	bt709: 1,
-	bt470bg: 5,
-	smpte170m: 6,
-	bt2020: 9,
-	smpte432: 12
-};
-const TRANSFER: Record<string, number> = {
-	bt709: 1,
-	smpte170m: 6,
-	linear: 8,
-	'iec61966-2-1': 13,
-	pq: 16,
-	hlg: 18
-};
-const MATRIX: Record<string, number> = {
-	rgb: 0,
-	bt709: 1,
-	bt470bg: 5,
-	smpte170m: 6,
-	'bt2020-ncl': 9
-};
+/** CICP's "unspecified". */
 const UNSPECIFIED = 2;
 
 const handler = () =>
@@ -131,11 +109,14 @@ export interface Sample {
 	duration: number;
 }
 
-/** The AVIF file's bytes for `samples` (their first must be a key frame with its sequence header). */
+/**
+ * The AVIF file's bytes for `samples` (their first must be a key frame with
+ * its sequence header), whose frames are in `colour`.
+ */
 export function muxAvif(
 	{ width, height, timescale }: { width: number; height: number; timescale: number },
 	samples: Sample[],
-	colorSpace: VideoColorSpaceInit | null,
+	colour: Cicp,
 	description: Uint8Array | null = null
 ): Uint8Array<ArrayBuffer>[] {
 	const first = samples[0];
@@ -151,18 +132,24 @@ export function muxAvif(
 	}
 	const sequence = parseSequenceHeader(headerObu);
 	const av1C = box('av1C', av1Config(headerObu));
-	// The bitstream's own colour description wins; then what the encoder said it did.
-	const described = sequence.colorDescription;
-	const code = (table: Record<string, number>, name: string | null | undefined): number =>
-		name ? (table[name] ?? UNSPECIFIED) : UNSPECIFIED;
+	// colr says the frames' colours. A stream that says otherwise — another
+	// range, another matrix — would be read one way and the file another:
+	// refused rather than shown wrong.
+	const said = sequence.colorDescription?.matrix ?? UNSPECIFIED;
+	if (sequence.fullRange !== colour.fullRange || ![colour.matrix, UNSPECIFIED].includes(said)) {
+		const range = (full: boolean) => (full ? 'full' : 'limited');
+		throw new Error(
+			`The AV1 encoder changed the colours it was given: its stream says ${range(sequence.fullRange)} range, matrix ${said}; the frames were ${range(colour.fullRange)} range, matrix ${colour.matrix}`
+		);
+	}
 	const colr = box(
 		'colr',
 		ascii('nclx'),
 		fields(
-			[16, described?.primaries ?? code(PRIMARIES, colorSpace?.primaries)],
-			[16, described?.transfer ?? code(TRANSFER, colorSpace?.transfer)],
-			[16, described?.matrix ?? code(MATRIX, colorSpace?.matrix)],
-			[8, sequence.fullRange ? 0x80 : 0]
+			[16, colour.primaries],
+			[16, colour.transfer],
+			[16, colour.matrix],
+			[8, colour.fullRange ? 0x80 : 0]
 		)
 	);
 	const total = samples.reduce((n, s) => n + s.duration, 0);
@@ -364,19 +351,14 @@ export class AvifEncoder {
 
 	/** Adds a width × height frame of RGBA pixels, shown for 1/fps s. The first is a key frame. */
 	async addFrame(rgba: Uint8ClampedArray): Promise<void> {
-		const [width, height] = [this.#width, this.#height];
-		if (rgba.length !== width * height * 4) {
-			throw new RangeError(
-				`expected a ${width} × ${height} frame (${width * height * 4} bytes), got ${rgba.length} bytes`
-			);
-		}
+		const frame = rgbaToI420(rgba, this.#width, this.#height);
 		const index = this.#index++;
-		await this.#encoder.encode(rgba, Math.round((index * 1e6) / this.#fps), index === 0);
+		await this.#encoder.encode(frame, Math.round((index * 1e6) / this.#fps), index === 0);
 	}
 
 	/** The AVIF file's bytes, in order. */
 	async finish(): Promise<Uint8Array<ArrayBuffer>[]> {
-		const { chunks, colorSpace, description = null } = await this.#encoder.finish();
+		const { chunks, description = null } = await this.#encoder.finish();
 		const tick = 1e6 / this.#fps;
 		const end = this.#index * tick;
 		// Each sample lasts until the next one: a frame the encoder dropped lengthens the one before.
@@ -391,7 +373,7 @@ export class AvifEncoder {
 		return muxAvif(
 			{ width: this.#width, height: this.#height, timescale: this.#fps },
 			samples,
-			colorSpace,
+			I420_CICP,
 			description
 		);
 	}
@@ -433,8 +415,8 @@ export interface Av1Platform {
  */
 function takesAv1Quantizers({ VideoEncoder, VideoFrame }: Required<Av1Platform>): boolean {
 	let read = false;
-	const frame = new VideoFrame(new Uint8Array(2 * 2 * 4), {
-		format: 'RGBA',
+	const frame = new VideoFrame(new Uint8Array(2 * 2 + 2), {
+		format: 'I420',
 		codedWidth: 2,
 		codedHeight: 2,
 		timestamp: 0
@@ -469,15 +451,8 @@ const bitsPerPixel = (quality: number) => 0.2 + quality ** 2 / 10_000;
 /**
  * The encoder configuration this browser accepts for AV1 at this size, and
  * the per-frame quantizer for `quality` where it takes one (0 best, 63
- * smallest; a bitrate otherwise). Null when it cannot encode AV1.
- *
- * Every frame is encoded, each predicted only from frames before it, in
- * every browser — what latency mode gives that differs. Chromium's encoder
- * never looks ahead, and may drop frames in 'realtime' mode only. Firefox's
- * never drops frames, and looks ahead in 'quality' mode, predicting frames
- * from filtered future ones (short of bits, a frame can come out nearer the
- * next one than itself). Firefox is the browser without per-frame options,
- * so they tell which.
+ * smallest; a bitrate otherwise). Null when it cannot encode AV1. Always
+ * 'quality' latency: in 'realtime' mode Chromium's encoder may drop frames.
  */
 export async function av1Encoding(
 	{ width, height, fps, quality }: Av1Settings,
@@ -485,28 +460,26 @@ export async function av1Encoding(
 ): Promise<{ config: VideoEncoderConfig; quantizer: number | null } | null> {
 	const { VideoEncoder, VideoFrame } = platform;
 	if (typeof VideoEncoder !== 'function' || typeof VideoFrame !== 'function') return null;
-	const base: VideoEncoderConfig = { codec: 'av01.0.08M.08', width, height, framerate: fps };
-	const bitrate = Math.round(width * height * fps * bitsPerPixel(quality));
-	const byQuantizer: VideoEncoderConfig = {
-		...base,
-		latencyMode: 'quality',
-		bitrateMode: 'quantizer'
+	const base: VideoEncoderConfig = {
+		codec: 'av01.0.08M.08',
+		width,
+		height,
+		framerate: fps,
+		latencyMode: 'quality'
 	};
-	const byBitrate = (latencyMode: LatencyMode): VideoEncoderConfig => ({
+	const byQuantizer: VideoEncoderConfig = { ...base, bitrateMode: 'quantizer' };
+	const byBitrate: VideoEncoderConfig = {
 		...base,
-		latencyMode,
 		bitrateMode: 'variable',
-		bitrate
-	});
+		bitrate: Math.round(width * height * fps * bitsPerPixel(quality))
+	};
 	let quantizers: boolean;
 	try {
 		quantizers = takesAv1Quantizers({ VideoEncoder, VideoFrame });
 	} catch {
-		return null; // No RGBA frames to encode (or no encoder to give them to).
+		return null; // No I420 frames to encode (or no encoder to give them to).
 	}
-	const choices = quantizers
-		? [byQuantizer, byBitrate('quality')]
-		: [byBitrate('realtime'), byBitrate('quality')];
+	const choices = quantizers ? [byQuantizer, byBitrate] : [byBitrate];
 	for (const config of choices) {
 		const support = await VideoEncoder.isConfigSupported(config).catch(() => null);
 		if (support?.supported) {
@@ -530,16 +503,17 @@ export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | 
 	const encoding = await av1Encoding(settings);
 	if (!encoding) return null;
 	const { config, quantizer } = encoding;
-	const { width, height, fps } = settings;
-	const output: Av1Output = { chunks: [], colorSpace: null };
+	const { fps } = settings;
+	const output: Av1Output = { chunks: [] };
 	let failure: Error | null = null;
 	const encoder = new VideoEncoder({
 		output(chunk, metadata) {
 			const data = new Uint8Array(chunk.byteLength);
 			chunk.copyTo(data);
 			output.chunks.push({ data, key: chunk.type === 'key', timestamp: chunk.timestamp });
+			// Its colorSpace is not used: browsers report what they assume, not
+			// always what they did (Firefox reports BT.709 for BT.601 frames).
 			const config = metadata?.decoderConfig;
-			if (config?.colorSpace) output.colorSpace = config.colorSpace;
 			if (config?.description) {
 				const d = config.description;
 				output.description = ArrayBuffer.isView(d)
@@ -553,14 +527,21 @@ export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | 
 	});
 	encoder.configure(config);
 	return {
-		async encode(pixels, timestamp, keyFrame) {
+		async encode(i420, timestamp, keyFrame) {
 			if (failure) throw failure;
-			const frame = new VideoFrame(pixels, {
-				format: 'RGBA',
-				codedWidth: width,
-				codedHeight: height,
+			const { data, width, height, codedWidth, codedHeight } = i420;
+			// The colour space goes with every frame: both Chromium's encoder and
+			// Firefox's write the first frame's into the stream.
+			const frame = new VideoFrame(data, {
+				format: 'I420',
+				codedWidth,
+				codedHeight,
+				visibleRect: { x: 0, y: 0, width, height },
+				displayWidth: width,
+				displayHeight: height,
 				timestamp,
-				duration: Math.round(1e6 / fps)
+				duration: Math.round(1e6 / fps),
+				colorSpace: I420_COLOR_SPACE
 			});
 			try {
 				const options: Av1EncodeOptions = { keyFrame };
