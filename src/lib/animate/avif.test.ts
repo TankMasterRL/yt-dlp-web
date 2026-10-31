@@ -2,7 +2,13 @@
 import { describe, expect, it } from 'vitest';
 import { readAvif } from '../../../tests/helpers/isobmff';
 import { av1Config } from './av1';
-import { AvifEncoder, type Av1Encoder, type Av1Output } from './avif';
+import {
+	AvifEncoder,
+	av1Encoding,
+	type Av1EncodeOptions,
+	type Av1Encoder,
+	type Av1Output
+} from './avif';
 
 /** Chromium's sequence header OBU for a 64×36 stream (see av1.test.ts). */
 const SEQUENCE_HEADER = [10, 12, 0, 0, 0, 2, 175, 241, 128, 52, 64, 67, 64, 97];
@@ -175,5 +181,124 @@ describe('AvifEncoder', () => {
 		const encoder = new AvifEncoder({ width: 64, height: 36, fps: 10, encoder: noHeader });
 		await encoder.addFrame(pixels(64, 36));
 		await expect(encoder.finish()).rejects.toThrow(/sequence header/);
+	});
+});
+
+/**
+ * A browser's VideoEncoder as av1Encoding sees it. Its encode() converts the
+ * options as WebIDL does — reading only the members this browser knows — and
+ * then, unconfigured, refuses. `av1` names a browser with per-frame AV1
+ * options (Chromium); without it, one that has none (Firefox).
+ */
+function fakeWebCodecs({
+	av1,
+	supports = () => true
+}: {
+	av1: boolean;
+	supports?: (config: VideoEncoderConfig) => boolean;
+}) {
+	const asked: VideoEncoderConfig[] = [];
+	const closed = { encoders: 0, frames: 0 };
+	class FakeVideoEncoder {
+		static async isConfigSupported(config: VideoEncoderConfig) {
+			asked.push(config);
+			return { supported: supports(config), config };
+		}
+		constructor(_init: VideoEncoderInit) {}
+		encode(_frame: unknown, options: Av1EncodeOptions = {}) {
+			void (av1 ? [options.av1, options.keyFrame] : [options.keyFrame]);
+			throw new DOMException('not configured', 'InvalidStateError');
+		}
+		close() {
+			closed.encoders++;
+		}
+	}
+	class FakeVideoFrame {
+		constructor(_data: AllowSharedBufferSource, _init: VideoFrameBufferInit) {}
+		close() {
+			closed.frames++;
+		}
+	}
+	return {
+		platform: { VideoEncoder: FakeVideoEncoder, VideoFrame: FakeVideoFrame },
+		asked,
+		closed
+	};
+}
+
+describe('av1Encoding', () => {
+	const settings = { width: 320, height: 180, fps: 10, quality: 75 };
+
+	it('sets a quantizer from the quality where encode() takes per-frame AV1 options', async () => {
+		const { platform, closed } = fakeWebCodecs({ av1: true });
+		const encoding = await av1Encoding(settings, platform);
+		expect(encoding).toEqual({
+			config: expect.objectContaining({
+				codec: 'av01.0.08M.08',
+				width: 320,
+				height: 180,
+				framerate: 10,
+				bitrateMode: 'quantizer',
+				latencyMode: 'quality'
+			}),
+			quantizer: 16
+		});
+		// The probe's encoder and frame are let go.
+		expect(closed).toEqual({ encoders: 1, frames: 1 });
+	});
+
+	it('encodes at a bitrate from the quality, without look-ahead, where encode() has no AV1 options', async () => {
+		// Firefox accepts bitrateMode 'quantizer' but has no `av1` encode options:
+		// it would encode at a variable bitrate with no target, whatever the quality.
+		const { platform } = fakeWebCodecs({ av1: false });
+		const encoding = await av1Encoding(settings, platform);
+		expect(encoding).toEqual({
+			config: expect.objectContaining({
+				bitrateMode: 'variable',
+				// Firefox's encoder looks ahead in 'quality' mode, never in 'realtime'.
+				latencyMode: 'realtime',
+				// 0.2 + q²/10⁴ bits per pixel per frame: what Chromium's quantizers make.
+				bitrate: Math.round(320 * 180 * 10 * (0.2 + 0.5625))
+			}),
+			quantizer: null
+		});
+	});
+
+	it('spends more bits for more quality', async () => {
+		const { platform } = fakeWebCodecs({ av1: false });
+		const bitrates = await Promise.all(
+			[50, 75, 100].map(
+				async (quality) => (await av1Encoding({ ...settings, quality }, platform))!.config.bitrate
+			)
+		);
+		expect(bitrates).toEqual([0.45, 0.7625, 1.2].map((bpp) => Math.round(320 * 180 * 10 * bpp)));
+	});
+
+	it('falls back to a bitrate where the quantizer mode is refused, and to nothing without AV1', async () => {
+		const noQuantizer = fakeWebCodecs({
+			av1: true,
+			supports: (c) => c.bitrateMode !== 'quantizer'
+		});
+		expect(await av1Encoding(settings, noQuantizer.platform)).toMatchObject({
+			config: { bitrateMode: 'variable', latencyMode: 'quality' },
+			quantizer: null
+		});
+		const noAv1 = fakeWebCodecs({ av1: true, supports: () => false });
+		expect(await av1Encoding(settings, noAv1.platform)).toBeNull();
+		expect(await av1Encoding(settings, {})).toBeNull();
+	});
+
+	it('makes no AV1 where the browser cannot make the RGBA frames it would be given', async () => {
+		const { platform } = fakeWebCodecs({ av1: true });
+		const noRgba = {
+			...platform,
+			VideoFrame: class {
+				constructor() {
+					throw new TypeError('RGBA is not supported');
+				}
+				close() {}
+			}
+		};
+		expect(await av1Encoding(settings, noRgba)).toBeNull();
 	});
 });
