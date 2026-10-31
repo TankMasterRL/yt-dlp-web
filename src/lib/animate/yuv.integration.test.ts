@@ -1,9 +1,9 @@
 // @vitest-environment node
 /**
  * The I420 the app hands the AV1 encoder, read back by FFmpeg's own
- * converter (swscale) as the AVIF says to read it: BT.709, full range. Read
- * as BT.601 (what Firefox converts with) or limited range, it comes out
- * plainly wrong — the error the AVIF's colours must not carry.
+ * converter (swscale) as the AVIF says to read it: BT.709, limited range.
+ * Read as BT.601 (what Firefox converts RGBA with) or full range, it comes
+ * out plainly wrong — the error the AVIF's colours must not carry.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadFFmpegCore } from '../../../tests/helpers/ffmpeg';
@@ -49,25 +49,37 @@ function readBack(frame: ReturnType<typeof rgbaToI420>, matrix: string, range: s
 	)[0];
 }
 
+/** FFmpeg's own BT.709 limited-range I420 of an even-sized picture: the bar for ours. */
+function ffmpegI420(picture: Uint8ClampedArray, width: number, height: number) {
+	const data = ffmpeg.withFile('picture.rgba', picture as unknown as Uint8Array, (path) => {
+		ffmpeg.run([
+			...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${width}x${height}`, '-i', path],
+			...['-vf', 'scale=out_color_matrix=bt709:out_range=limited', '-pix_fmt', 'yuv420p'],
+			...['-f', 'rawvideo', '/picture.yuv']
+		]);
+		return ffmpeg.take('/picture.yuv');
+	});
+	return { data, width, height, codedWidth: width, codedHeight: height };
+}
+
 describe('rgbaToI420, read back by FFmpeg', () => {
 	for (const [width, height] of [
 		[160, 120],
 		[159, 119]
 	]) {
-		it(`is the picture again at ${width} × ${height}, read as BT.709 full range`, () => {
+		it(`is the picture again at ${width} × ${height}, read as BT.709 limited range`, () => {
 			// testsrc2 draws its colours at 4:2:0 resolution, so they survive the
 			// conversion's subsampling: what is left is the conversion's own error.
-			const picture = cut(
-				ffmpeg.lavfi('testsrc2=size=160x120:rate=10:duration=1', 160, 120)[0],
-				width,
-				height
-			);
+			const source = ffmpeg.lavfi('testsrc2=size=160x120:rate=10:duration=1', 160, 120)[0];
+			const picture = cut(source, width, height);
 			const frame = rgbaToI420(picture, width, height);
-			const right = difference(readBack(frame, 'bt709', 'full'), picture);
-			expect(right).toBeLessThan(1);
-			// Read as Firefox's encoder would have it, or as limited range: far off.
-			expect(difference(readBack(frame, 'bt601', 'full'), picture)).toBeGreaterThan(right + 2);
-			expect(difference(readBack(frame, 'bt709', 'limited'), picture)).toBeGreaterThan(right + 1);
+			const right = difference(readBack(frame, 'bt709', 'limited'), picture);
+			// As close as FFmpeg's own conversion comes (limited range has fewer levels than full).
+			const own = difference(readBack(ffmpegI420(source, 160, 120), 'bt709', 'limited'), source);
+			expect(right).toBeLessThan(own + 0.1);
+			// Read with Firefox's RGBA matrix, or as full range: far off.
+			expect(difference(readBack(frame, 'bt601', 'limited'), picture)).toBeGreaterThan(right + 2);
+			expect(difference(readBack(frame, 'bt709', 'full'), picture)).toBeGreaterThan(right + 1);
 		});
 	}
 });

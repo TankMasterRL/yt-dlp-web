@@ -123,7 +123,18 @@ async function chooseRangeAndCrop(page: Page, dialog: Locator) {
 async function createAndSave(page: Page, dialog: Locator, label: string): Promise<Uint8Array> {
 	await dialog.getByRole('button', { name: `Create ${label}` }).click();
 	const result = dialog.getByRole('region', { name: `Your ${label}` });
-	await expect(result).toBeVisible({ timeout: 90_000 });
+	// The file, or the dialog saying why there is none: a failure fails as itself,
+	// and one that never ends says how far it got.
+	const failure = dialog.getByRole('alert');
+	try {
+		await expect(result.or(failure)).toBeVisible({ timeout: 90_000 });
+	} catch (error) {
+		const status = await dialog.getByRole('status').allTextContents();
+		throw new Error(`No ${label} after 90 s; the dialog says: ${status.join(' ') || 'nothing'}`, {
+			cause: error
+		});
+	}
+	expect(await failure.allTextContents(), `making the ${label}`).toEqual([]);
 	await expect(result).toContainText('10 frames · 1.0 s');
 	const [download]: [Download, void] = await Promise.all([
 		page.waitForEvent('download'),
