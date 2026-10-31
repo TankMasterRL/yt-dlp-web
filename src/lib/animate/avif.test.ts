@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
+import { sequenceHeaderObu, type SequenceHeaderColour } from '../../../tests/helpers/av1';
 import { readAvif } from '../../../tests/helpers/isobmff';
 import { av1Config } from './av1';
 import {
@@ -9,6 +10,7 @@ import {
 	type Av1Encoder,
 	type Av1Output
 } from './avif';
+import { rgbaToI420, type I420Frame } from './yuv';
 
 /** Chromium's sequence header OBU for a 64×36 stream (see av1.test.ts). */
 const SEQUENCE_HEADER = [10, 12, 0, 0, 0, 2, 175, 241, 128, 52, 64, 67, 64, 97];
@@ -18,21 +20,24 @@ const frameObu = (n: number) => [(6 << 3) | 0b10, 2, 0xf0, n];
 
 /**
  * An AV1 encoder that makes Chromium-shaped temporal units: a delimiter, the
- * sequence header on key frames, then the frame. `drop` loses frames, as a
- * real encoder may.
+ * sequence header on key frames (`colour` makes one that says that), then
+ * the frame. `drop` loses frames, as a real encoder may.
  */
-function fakeAv1(options: { drop?: number[]; colorSpace?: VideoColorSpaceInit | null } = {}) {
-	const output: Av1Output = { chunks: [], colorSpace: options.colorSpace ?? null };
+function fakeAv1(options: { drop?: number[]; colour?: SequenceHeaderColour } = {}) {
+	const output: Av1Output = { chunks: [] };
+	const header = options.colour ? [...sequenceHeaderObu(options.colour)] : SEQUENCE_HEADER;
 	let n = 0;
-	const encoder: Av1Encoder & { keyFrames: boolean[] } = {
+	const encoder: Av1Encoder & { keyFrames: boolean[]; frames: I420Frame[] } = {
 		keyFrames: [],
-		async encode(_pixels, timestamp, keyFrame) {
+		frames: [],
+		async encode(frame, timestamp, keyFrame) {
 			encoder.keyFrames.push(keyFrame);
+			encoder.frames.push(frame);
 			const index = n++;
 			if (options.drop?.includes(index)) return;
 			const data = Uint8Array.from([
 				...TEMPORAL_DELIMITER,
-				...(keyFrame ? SEQUENCE_HEADER : []),
+				...(keyFrame ? header : []),
 				...frameObu(index)
 			]);
 			output.chunks.push({ data, key: keyFrame || index === 4, timestamp });
@@ -113,21 +118,36 @@ describe('AvifEncoder', () => {
 		expect([...avif.track.av1C]).toEqual([...av1Config(Uint8Array.from(SEQUENCE_HEADER))]);
 	});
 
-	it('states the colour the encoder converted with, in nclx', async () => {
-		const avif = await encode(
-			2,
-			10,
-			fakeAv1({
-				colorSpace: {
-					primaries: 'bt709',
-					transfer: 'iec61966-2-1',
-					matrix: 'bt709',
-					fullRange: true
-				}
-			})
-		);
-		// 'nclx', primaries 1, transfer 13, matrix 1, full range.
-		expect([...avif.track.colr!]).toEqual([0x6e, 0x63, 0x6c, 0x78, 0, 1, 0, 13, 0, 1, 0x80]);
+	it('hands the encoder its frames as I420, converted here', async () => {
+		const av1 = fakeAv1();
+		const encoder = new AvifEncoder({ width: 5, height: 3, fps: 10, encoder: av1 });
+		const frame = Uint8ClampedArray.from({ length: 5 * 3 * 4 }, (_, i) => (i * 37) % 256);
+		await encoder.addFrame(frame);
+		expect(av1.frames).toEqual([rgbaToI420(frame, 5, 3)]);
+		expect(av1.frames[0]).toMatchObject({ codedWidth: 6, codedHeight: 4 });
+	});
+
+	// 'nclx', primaries BT.709, transfer sRGB, matrix BT.709, full range.
+	const NCLX_OF_THE_CONVERSION = [0x6e, 0x63, 0x6c, 0x78, 0, 1, 0, 13, 0, 1, 0x80];
+
+	it('states the colour the frames were converted with, in nclx', async () => {
+		const avif = await encode(2, 10);
+		expect([...avif.track.colr!]).toEqual(NCLX_OF_THE_CONVERSION);
+		expect([...avif.properties[3].data]).toEqual(NCLX_OF_THE_CONVERSION);
+	});
+
+	it('states it where the stream itself says nothing of colour (as Firefox’s did)', async () => {
+		const avif = await encode(2, 10, fakeAv1({ colour: { colorDescription: null } }));
+		expect([...avif.track.colr!]).toEqual(NCLX_OF_THE_CONVERSION);
+	});
+
+	it('refuses a stream whose encoder changed the colours it was given', async () => {
+		for (const colour of [
+			{ fullRange: false },
+			{ colorDescription: { primaries: 1, transfer: 13, matrix: 6 } }
+		]) {
+			await expect(encode(2, 10, fakeAv1({ colour }))).rejects.toThrow(/colours/);
+		}
 	});
 
 	it('makes the first frame the primary image, for readers of still AVIF', async () => {
@@ -155,7 +175,6 @@ describe('AvifEncoder', () => {
 			async finish() {
 				return {
 					chunks: [{ data: Uint8Array.from(frameObu(0)), key: true, timestamp: 0 }],
-					colorSpace: null,
 					description
 				};
 			}
@@ -172,10 +191,7 @@ describe('AvifEncoder', () => {
 		const noHeader: Av1Encoder = {
 			async encode() {},
 			async finish() {
-				return {
-					chunks: [{ data: Uint8Array.from(frameObu(0)), key: true, timestamp: 0 }],
-					colorSpace: null
-				};
+				return { chunks: [{ data: Uint8Array.from(frameObu(0)), key: true, timestamp: 0 }] };
 			}
 		};
 		const encoder = new AvifEncoder({ width: 64, height: 36, fps: 10, encoder: noHeader });
@@ -247,7 +263,7 @@ describe('av1Encoding', () => {
 		expect(closed).toEqual({ encoders: 1, frames: 1 });
 	});
 
-	it('encodes at a bitrate from the quality, without look-ahead, where encode() has no AV1 options', async () => {
+	it('encodes at a bitrate from the quality where encode() has no AV1 options', async () => {
 		// Firefox accepts bitrateMode 'quantizer' but has no `av1` encode options:
 		// it would encode at a variable bitrate with no target, whatever the quality.
 		const { platform } = fakeWebCodecs({ av1: false });
@@ -255,8 +271,7 @@ describe('av1Encoding', () => {
 		expect(encoding).toEqual({
 			config: expect.objectContaining({
 				bitrateMode: 'variable',
-				// Firefox's encoder looks ahead in 'quality' mode, never in 'realtime'.
-				latencyMode: 'realtime',
+				latencyMode: 'quality',
 				// 0.2 + q²/10⁴ bits per pixel per frame: what Chromium's quantizers make.
 				bitrate: Math.round(320 * 180 * 10 * (0.2 + 0.5625))
 			}),
@@ -288,13 +303,13 @@ describe('av1Encoding', () => {
 		expect(await av1Encoding(settings, {})).toBeNull();
 	});
 
-	it('makes no AV1 where the browser cannot make the RGBA frames it would be given', async () => {
+	it('makes no AV1 where the browser cannot make the I420 frames it would be given', async () => {
 		const { platform } = fakeWebCodecs({ av1: true });
 		const noRgba = {
 			...platform,
 			VideoFrame: class {
 				constructor() {
-					throw new TypeError('RGBA is not supported');
+					throw new TypeError('I420 is not supported');
 				}
 				close() {}
 			}

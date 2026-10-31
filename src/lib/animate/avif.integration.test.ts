@@ -10,8 +10,8 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadFFmpegCore } from '../../../tests/helpers/ffmpeg';
 import { concat, oracle } from '../../../tests/helpers/oracle';
-import { readObus, stripForIsobmff } from './av1';
-import { AvifEncoder, type Av1Chunk, type Av1Encoder } from './avif';
+import { OBU_SEQUENCE_HEADER, parseSequenceHeader, readObus, stripForIsobmff } from './av1';
+import { muxAvif, type Sample } from './avif';
 
 let ffmpeg: ReturnType<typeof oracle>;
 beforeAll(async () => {
@@ -45,20 +45,21 @@ describe('AVIF from a real AV1 stream', () => {
 		expect(units.length).toBeGreaterThan(10);
 		const fps = 12;
 		// Key frames are the units that carry a sequence header.
-		const chunks: Av1Chunk[] = units.map((data, i) => ({
-			data,
-			key: readObus(data).some((o) => o.type === 1),
-			timestamp: Math.round((i * 1e6) / fps)
-		}));
-		const replay: Av1Encoder = {
-			async encode() {},
-			async finish() {
-				return { chunks, colorSpace: null };
-			}
+		const headerOf = (unit: Uint8Array) => {
+			const obu = readObus(unit).find((o) => o.type === OBU_SEQUENCE_HEADER);
+			return obu && unit.subarray(obu.start, obu.end);
 		};
-		const encoder = new AvifEncoder({ width: 320, height: 180, fps, encoder: replay });
-		for (const _ of units) await encoder.addFrame(new Uint8ClampedArray(320 * 180 * 4));
-		const avif = concat(await encoder.finish());
+		const samples: Sample[] = units.map((unit) => ({
+			data: stripForIsobmff(unit),
+			sync: !!headerOf(unit),
+			duration: 1
+		}));
+		// Its frames are in the colours its stream says (MediaRecorder's: BT.601,
+		// limited range), not the app's conversion: the file says so too.
+		const sequence = parseSequenceHeader(headerOf(units[0])!);
+		const colour = { ...sequence.colorDescription!, fullRange: sequence.fullRange };
+		expect(colour).toMatchObject({ matrix: 6, fullRange: false });
+		const avif = concat(muxAvif({ width: 320, height: 180, timescale: fps }, samples, colour));
 
 		expect(
 			ffmpeg.probe(avif, 'avif', 'stream=codec_name,width,height,nb_frames,r_frame_rate')
