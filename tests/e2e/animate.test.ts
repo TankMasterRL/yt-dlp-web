@@ -293,8 +293,10 @@ test.describe('animated images from a video in the library', () => {
 			for (const [i, frame] of decoded.frames.entries()) {
 				expect([frame.width, frame.height]).toEqual([crop.width, crop.height]);
 				const differences = references.map((r) => difference(frame.grid, r));
-				expect(differences.indexOf(Math.min(...differences)), `frame ${i}`).toBe(i);
-				expect(differences[i], `frame ${i}`).toBeLessThan(tolerance);
+				// How far it is from each frame taken: what a failure needs to be explained.
+				const from = `frame ${i}, from each taken: ${differences.map((d) => d.toFixed(1)).join(' ')}`;
+				expect(differences.indexOf(Math.min(...differences)), from).toBe(i);
+				expect(differences[i], from).toBeLessThan(tolerance);
 			}
 			return true;
 		};

@@ -408,29 +408,111 @@ interface Av1Settings {
 	quality: number;
 }
 
+/** VideoEncoder.encode() options, with the AV1 ones TypeScript's DOM types leave out. */
+export type Av1EncodeOptions = VideoEncoderEncodeOptions & { av1?: { quantizer?: number } };
+
+/** What av1Encoding uses of WebCodecs: the browser's, or a test's. */
+export interface Av1Platform {
+	VideoEncoder?: {
+		isConfigSupported(config: VideoEncoderConfig): Promise<VideoEncoderSupport>;
+		new (init: VideoEncoderInit): {
+			encode(frame: never, options?: Av1EncodeOptions): void;
+			close(): void;
+		};
+	};
+	VideoFrame?: new (data: AllowSharedBufferSource, init: VideoFrameBufferInit) => { close(): void };
+}
+
 /**
- * The encoder configuration this browser accepts for AV1 at this size: by
- * quantizer where it can, by bitrate otherwise. Null when it cannot encode AV1.
+ * Whether this browser's encode() takes per-frame AV1 options — and so a
+ * quantizer, with `bitrateMode: 'quantizer'`. Firefox accepts that mode but
+ * has no `av1` options: it encodes at a variable bitrate with no target,
+ * whatever the quantizer. WebIDL converts the options before encode() looks
+ * at the encoder's state, reading only the members this browser knows, so an
+ * unconfigured encoder tells: it refuses, after reading `av1` or not.
  */
-async function av1Encoding({ width, height, fps, quality }: Av1Settings) {
-	if (typeof VideoEncoder !== 'function') return null;
-	const base: VideoEncoderConfig = {
-		codec: 'av01.0.08M.08',
-		width,
-		height,
-		framerate: fps,
-		latencyMode: 'quality'
-	};
-	const byQuantizer: VideoEncoderConfig = { ...base, bitrateMode: 'quantizer' };
-	// Bits per pixel per frame: about 0.05 at quality 50, 0.4 at 100.
-	const byBitrate: VideoEncoderConfig = {
+function takesAv1Quantizers({ VideoEncoder, VideoFrame }: Required<Av1Platform>): boolean {
+	let read = false;
+	const frame = new VideoFrame(new Uint8Array(2 * 2 * 4), {
+		format: 'RGBA',
+		codedWidth: 2,
+		codedHeight: 2,
+		timestamp: 0
+	});
+	try {
+		const encoder = new VideoEncoder({ output() {}, error() {} });
+		try {
+			encoder.encode(frame as never, {
+				get av1() {
+					read = true;
+					return {};
+				}
+			});
+		} catch {
+			// Not configured: the answer is already in.
+		} finally {
+			encoder.close();
+		}
+	} finally {
+		frame.close();
+	}
+	return read;
+}
+
+/**
+ * Bits per pixel per frame for a quality of 1-100, where the encoder takes a
+ * bitrate only: about what Chromium's AV1 makes of the fixture clip at that
+ * quality's quantizer (0.51 at 50, 0.75 at 75, 1.2 at 100).
+ */
+const bitsPerPixel = (quality: number) => 0.2 + quality ** 2 / 10_000;
+
+/**
+ * The encoder configuration this browser accepts for AV1 at this size, and
+ * the per-frame quantizer for `quality` where it takes one (0 best, 63
+ * smallest; a bitrate otherwise). Null when it cannot encode AV1.
+ *
+ * Every frame is encoded, each predicted only from frames before it, in
+ * every browser — what latency mode gives that differs. Chromium's encoder
+ * never looks ahead, and may drop frames in 'realtime' mode only. Firefox's
+ * never drops frames, and looks ahead in 'quality' mode, predicting frames
+ * from filtered future ones (short of bits, a frame can come out nearer the
+ * next one than itself). Firefox is the browser without per-frame options,
+ * so they tell which.
+ */
+export async function av1Encoding(
+	{ width, height, fps, quality }: Av1Settings,
+	platform: Av1Platform = globalThis
+): Promise<{ config: VideoEncoderConfig; quantizer: number | null } | null> {
+	const { VideoEncoder, VideoFrame } = platform;
+	if (typeof VideoEncoder !== 'function' || typeof VideoFrame !== 'function') return null;
+	const base: VideoEncoderConfig = { codec: 'av01.0.08M.08', width, height, framerate: fps };
+	const bitrate = Math.round(width * height * fps * bitsPerPixel(quality));
+	const byQuantizer: VideoEncoderConfig = {
 		...base,
-		bitrateMode: 'variable',
-		bitrate: Math.round(width * height * fps * 0.4 * (quality / 100) ** 3)
+		latencyMode: 'quality',
+		bitrateMode: 'quantizer'
 	};
-	for (const config of [byQuantizer, byBitrate]) {
+	const byBitrate = (latencyMode: LatencyMode): VideoEncoderConfig => ({
+		...base,
+		latencyMode,
+		bitrateMode: 'variable',
+		bitrate
+	});
+	let quantizers: boolean;
+	try {
+		quantizers = takesAv1Quantizers({ VideoEncoder, VideoFrame });
+	} catch {
+		return null; // No RGBA frames to encode (or no encoder to give them to).
+	}
+	const choices = quantizers
+		? [byQuantizer, byBitrate('quality')]
+		: [byBitrate('realtime'), byBitrate('quality')];
+	for (const config of choices) {
 		const support = await VideoEncoder.isConfigSupported(config).catch(() => null);
-		if (support?.supported) return { config, usesQuantizer: config === byQuantizer };
+		if (support?.supported) {
+			const quantizer = config === byQuantizer ? Math.round(((100 - quality) * 63) / 100) : null;
+			return { config, quantizer };
+		}
 	}
 	return null;
 }
@@ -441,16 +523,14 @@ export async function av1Supported(): Promise<boolean> {
 }
 
 /**
- * The browser's AV1 encoder (WebCodecs). `quality` 1-100 becomes a quantizer
- * where the browser takes one (0 best, 63 smallest), a bitrate otherwise.
- * Null when this browser cannot encode AV1 at this size.
+ * The browser's AV1 encoder (WebCodecs), at the quality asked for (see
+ * av1Encoding). Null when this browser cannot encode AV1 at this size.
  */
 export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | null> {
 	const encoding = await av1Encoding(settings);
 	if (!encoding) return null;
-	const { config, usesQuantizer } = encoding;
-	const { width, height, fps, quality } = settings;
-	const quantizer = Math.round(((100 - quality) * 63) / 100);
+	const { config, quantizer } = encoding;
+	const { width, height, fps } = settings;
 	const output: Av1Output = { chunks: [], colorSpace: null };
 	let failure: Error | null = null;
 	const encoder = new VideoEncoder({
@@ -483,7 +563,9 @@ export async function webCodecsAv1(settings: Av1Settings): Promise<Av1Encoder | 
 				duration: Math.round(1e6 / fps)
 			});
 			try {
-				encoder.encode(frame, { keyFrame, ...(usesQuantizer ? { av1: { quantizer } } : {}) });
+				const options: Av1EncodeOptions = { keyFrame };
+				if (quantizer !== null) options.av1 = { quantizer };
+				encoder.encode(frame, options);
 			} finally {
 				frame.close();
 			}
