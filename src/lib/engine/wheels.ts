@@ -28,11 +28,11 @@ export interface WheelPin {
 export const WHEELS: readonly WheelPin[] = [
 	{
 		name: 'yt-dlp',
-		version: '2026.8.19',
-		file: 'yt_dlp-2026.8.19-py3-none-any.whl',
-		url: 'https://files.pythonhosted.org/packages/69/b2/8cd1613f56eed7ceb64fbd4df3f1c01246bfb098e6f398228bafda22b80b/yt_dlp-2026.8.19-py3-none-any.whl',
-		sha256: '1d57897e94c6665a0a6f9bc54b34e584284e32c034ffab3a7df25d8f7b24eedf',
-		size: 3185533
+		version: '2026.10.26',
+		file: 'yt_dlp-2026.10.26-py3-none-any.whl',
+		url: 'https://files.pythonhosted.org/packages/7f/3d/16ea7d5638cf585991f2c5705e8083688dde633d32d0871f2404e0f4d827/yt_dlp-2026.10.26-py3-none-any.whl',
+		sha256: 'a05c5b5d8562f7e8a62f5334348b406af4930d56d3a65f8021d14af0e22339ae',
+		size: 3186201
 	},
 	{
 		name: 'yt-dlp-ejs',
