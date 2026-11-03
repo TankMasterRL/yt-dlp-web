@@ -16,7 +16,7 @@
  * below ffmpeg.wasm's (Workers Static Assets: 25 MiB) unless the remux core is
  * built, or to ship no FFmpeg at all. The app then offers no merging.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -144,15 +144,20 @@ export function ffmpegAssets(
 	};
 }
 
-async function copyAll(files: readonly string[], from: string, to: string): Promise<void> {
-	await mkdir(to, { recursive: true });
+/**
+ * Make `to` hold exactly `files` from `from`. Whatever an earlier pin left
+ * there (the previous yt-dlp wheel, say) would otherwise ship in the build.
+ */
+export async function copyAll(files: readonly string[], from: string, to: string): Promise<void> {
 	for (const file of files) {
 		const source = join(from, file);
-		if (!(await Bun.file(source).exists())) {
+		if (!existsSync(source)) {
 			throw new Error(`Missing ${source} — run \`bun install\` / \`bun run fetch:wheels\` first`);
 		}
-		await copyFile(source, join(to, file));
 	}
+	await rm(to, { recursive: true, force: true });
+	await mkdir(to, { recursive: true });
+	for (const file of files) await copyFile(join(from, file), join(to, file));
 }
 
 if (import.meta.main) {
