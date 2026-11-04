@@ -10,7 +10,7 @@
 # the image of the Emscripten release scripts/build-ffmpeg.ts pins, so the
 # script finds that emcc on PATH. Its own stage: only its sources invalidate it.
 FROM emscripten/emsdk:6.0.10 AS remux-core
-COPY --from=oven/bun:1.3.14 /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 COPY ffmpeg ffmpeg/
 COPY scripts/build-ffmpeg.ts scripts/
@@ -23,7 +23,7 @@ FROM mcr.microsoft.com/playwright:v1.61.1-noble
 
 # Bun drives installs and package scripts; the Vitest/Playwright binaries still
 # execute under the image's Node runtime via their shebangs.
-COPY --from=oven/bun:1.3.14 /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
 

@@ -17,7 +17,6 @@
  * The output is committed; this script only needs re-running to change it:
  *   bun scripts/make-fixture-media.ts
  */
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from '@playwright/test';
@@ -65,9 +64,9 @@ for (const [name, width, height] of [
 ] as const) {
 	const jpegs = await renderFrames(width, height, 24, `${height}p`);
 	const target = join(OUT, `${name}.webm`);
-	const run = spawnSync(
-		ffmpeg,
+	const run = Bun.spawnSync(
 		[
+			ffmpeg,
 			'-y',
 			'-fflags',
 			'+bitexact',
@@ -92,9 +91,9 @@ for (const [name, width, height] of [
 			'webm',
 			target
 		],
-		{ input: jpegs }
+		{ stdin: jpegs }
 	);
-	if (run.status !== 0)
+	if (!run.success)
 		throw new Error(`ffmpeg failed for ${name}: ${run.stderr.toString().slice(-800)}`);
 	console.log(`✓ ${target}`);
 }

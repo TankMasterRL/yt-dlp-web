@@ -4,6 +4,7 @@
 	"private": true,
 	"description": "Run yt-dlp in the browser via Pyodide — SvelteKit + Bun, with a Cloudflare Worker relay and a local OPFS download library.",
 	"type": "module",
+	"packageManager": "bun@1.4.4",
 	"engines": {
 		"node": ">=22.13"
 	},

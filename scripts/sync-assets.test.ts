@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -6,6 +6,7 @@ import { FFMPEG_CORE_JS, FFMPEG_CORE_WASM } from '../src/lib/remux/assets';
 import { BUILD_INFO_FILE, CORE_FILES, type BuildInfo } from './build-ffmpeg';
 import {
 	FFMPEG_SOURCE_TAGS,
+	copyAll,
 	ffmpegAssets,
 	ffmpegChoice,
 	ffmpegNotice,
@@ -15,6 +16,37 @@ import {
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
 	dependencies: Record<string, string>;
 };
+
+describe('a synced asset directory', () => {
+	let from: string;
+	let to: string;
+	beforeEach(() => {
+		from = mkdtempSync(join(tmpdir(), 'assets-from-'));
+		to = join(mkdtempSync(join(tmpdir(), 'assets-to-')), 'wheels');
+	});
+	afterEach(() => {
+		rmSync(from, { recursive: true, force: true });
+		rmSync(join(to, '..'), { recursive: true, force: true });
+	});
+
+	it('holds exactly the files it is given: what an earlier pin left there would ship in the build', async () => {
+		writeFileSync(join(from, 'yt_dlp-new.whl'), 'new');
+		mkdirSync(to);
+		writeFileSync(join(to, 'yt_dlp-old.whl'), 'old');
+		await copyAll(['yt_dlp-new.whl'], from, to);
+		expect(readdirSync(to)).toEqual(['yt_dlp-new.whl']);
+		expect(readFileSync(join(to, 'yt_dlp-new.whl'), 'utf8')).toBe('new');
+	});
+
+	it('refuses a missing source, and leaves the directory as it was', async () => {
+		mkdirSync(to);
+		writeFileSync(join(to, 'yt_dlp-old.whl'), 'old');
+		await expect(copyAll(['yt_dlp-new.whl'], from, to)).rejects.toThrow(
+			/Missing .*yt_dlp-new\.whl/
+		);
+		expect(readdirSync(to)).toEqual(['yt_dlp-old.whl']);
+	});
+});
 
 describe('the ffmpeg.wasm the build ships', () => {
 	const version = pkg.dependencies['@ffmpeg/core'];
