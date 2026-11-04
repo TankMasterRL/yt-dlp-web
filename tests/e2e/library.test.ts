@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { expect, test } from './fixtures';
-import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, opfsFiles } from './app';
+import {
+	ENGINE_BOOT_MS,
+	EXTRACTION_MS,
+	NO_OPFS,
+	engineReady,
+	hasOpfs,
+	opfsFiles,
+	probe
+} from './app';
 import { recordCspViolations } from './csp';
 
 const FIXTURE = readFileSync(new URL('../fixtures/media/bbf-360.webm', import.meta.url));
@@ -50,7 +58,9 @@ test.describe('download → library → play → export → delete', () => {
 			card.getByRole('button', { name: /^Save / }).click()
 		]);
 		expect(download.suggestedFilename()).toBe('Big Buck Fixture (1) [0].webm');
-		const exported = readFileSync((await download.path())!);
+		const exported = readFileSync(
+			(await probe('wait for the exported file to download', () => download.path()))!
+		);
 		expect(sha256(exported)).toBe(sha256(FIXTURE));
 
 		// It survives a reload (IndexedDB metadata, OPFS bytes).

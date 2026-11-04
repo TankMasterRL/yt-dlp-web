@@ -57,3 +57,20 @@ describe('CI keeps the e2e results of every failed attempt', () => {
 		expect(upload).toContain('if-no-files-found: ignore');
 	});
 });
+
+describe("CI's browsers", () => {
+	it('come from the Playwright image of the exact @playwright/test version bun.lock resolves', () => {
+		// The image ships the browser builds that one Playwright release drives;
+		// any other pairing is untested, so the two move together.
+		const locked = source('bun.lock').match(
+			/"@playwright\/test": \["@playwright\/test@([^"]+)"/
+		)?.[1];
+		const pinned = JSON.parse(source('package.json')).devDependencies['@playwright/test'];
+		const image = source('Dockerfile.test').match(
+			/^FROM mcr\.microsoft\.com\/playwright:v(\S+)-noble$/m
+		)?.[1];
+		expect(locked).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(pinned).toBe(locked);
+		expect(image).toBe(locked);
+	});
+});

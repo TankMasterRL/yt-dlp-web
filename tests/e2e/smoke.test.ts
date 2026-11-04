@@ -44,11 +44,16 @@ test('pages and assets carry the security headers a real deploy sends', async ({
 });
 
 test('refuses to be framed', async ({ page }) => {
+	// Judged from outside the frame: Firefox under Playwright 1.64 never
+	// answers a locator that enters a frame the browser blocked. A framed app
+	// that rendered would fetch its own scripts before the parent's load event;
+	// a blocked one fetches its document and nothing else.
+	const requested: string[] = [];
+	page.on('request', (request) => requested.push(new URL(request.url()).pathname));
 	await page.setContent('<iframe src="http://localhost:4173/" title="app"></iframe>', {
 		waitUntil: 'load'
 	});
-	const frame = page.frameLocator('iframe[title="app"]');
-	await expect(frame.getByRole('heading', { name: 'Download' })).toHaveCount(0);
+	expect(requested).toEqual(['/']);
 });
 
 test('every feature the Permissions-Policy switches off is one the browser knows', async ({
