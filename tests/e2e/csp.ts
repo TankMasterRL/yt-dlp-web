@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { probe } from './app';
 
 /**
  * Record every CSP / Trusted Types violation the page reports. Registered as an
@@ -13,7 +14,9 @@ export async function recordCspViolations(page: Page): Promise<() => Promise<str
 		});
 	});
 	return () =>
-		page.evaluate(() => (globalThis as unknown as { __cspViolations: string[] }).__cspViolations);
+		probe('read the CSP violations the page recorded', () =>
+			page.evaluate(() => (globalThis as unknown as { __cspViolations: string[] }).__cspViolations)
+		);
 }
 
 /** CSP / Trusted Types violations inside workers only reach the console. */

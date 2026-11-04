@@ -1,5 +1,13 @@
 import { expect, test } from './fixtures';
-import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, opfsFiles } from './app';
+import {
+	ENGINE_BOOT_MS,
+	EXTRACTION_MS,
+	NO_OPFS,
+	engineReady,
+	hasOpfs,
+	opfsFiles,
+	probe
+} from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
 
 /** Whether a media element has sound, asked in each engine's own terms. */
@@ -75,11 +83,13 @@ test.describe('merging separate video and audio with FFmpeg', () => {
 		expect(files[0]).toMatch(/^[\w-]+\.webm$/);
 
 		// The WebM's track list names both streams…
-		const head = await page.evaluate(async (name) => {
-			const root = await navigator.storage.getDirectory();
-			const file = await (await root.getFileHandle(name)).getFile();
-			return new TextDecoder('latin1').decode(await file.slice(0, 4096).arrayBuffer());
-		}, files[0]);
+		const head = await probe('read the start of the merged file from OPFS', () =>
+			page.evaluate(async (name) => {
+				const root = await navigator.storage.getDirectory();
+				const file = await (await root.getFileHandle(name)).getFile();
+				return new TextDecoder('latin1').decode(await file.slice(0, 4096).arrayBuffer());
+			}, files[0])
+		);
 		expect(head).toContain('V_VP8');
 		expect(head).toContain('A_OPUS');
 
@@ -89,10 +99,12 @@ test.describe('merging separate video and audio with FFmpeg', () => {
 		await expect
 			.poll(() => video.evaluate((v: HTMLVideoElement) => v.videoWidth), { timeout: 15_000 })
 			.toBe(640);
-		await video.evaluate((v: HTMLVideoElement) => {
-			v.muted = true;
-			return v.play();
-		});
+		await probe('start muted playback', () =>
+			video.evaluate((v: HTMLVideoElement) => {
+				v.muted = true;
+				return v.play();
+			})
+		);
 		await expect.poll(() => video.evaluate(hasAudio), { timeout: 15_000 }).toBe(true);
 
 		expect(await violations()).toEqual([]);

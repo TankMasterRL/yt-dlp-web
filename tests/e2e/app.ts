@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { test } from './fixtures';
 
 /**
  * Time budgets for work Pyodide does. Firefox runs Python's first-time paths
@@ -7,6 +8,18 @@ import { expect, type Page } from '@playwright/test';
  */
 export const ENGINE_BOOT_MS = 120_000;
 export const EXTRACTION_MS = 60_000;
+
+/** How long a probe may take: page.evaluate and download.path() have no timeout of their own. */
+export const PROBE_MS = 30_000;
+
+/**
+ * Run a wait Playwright leaves unbounded (page.evaluate, a locator's evaluate,
+ * download.path()) as a named step with a timeout, so a probe that never
+ * answers fails as itself instead of as the test's timeout, with no step named.
+ */
+export function probe<T>(title: string, body: () => Promise<T>): Promise<T> {
+	return test.step(title, body, { timeout: PROBE_MS });
+}
 
 export async function engineReady(page: Page): Promise<void> {
 	await expect(page.locator('#engine-status')).toHaveAttribute('data-engine-state', 'ready', {
@@ -20,26 +33,30 @@ export async function engineReady(page: Page): Promise<void> {
  * and private windows may refuse it.
  */
 export async function hasOpfs(page: Page): Promise<boolean> {
-	return page.evaluate(async () => {
-		try {
-			await navigator.storage.getDirectory();
-			return true;
-		} catch {
-			return false;
-		}
-	});
+	return probe('ask whether the page has an origin-private file system', () =>
+		page.evaluate(async () => {
+			try {
+				await navigator.storage.getDirectory();
+				return true;
+			} catch {
+				return false;
+			}
+		})
+	);
 }
 
 export const NO_OPFS =
 	"this browser build has no origin-private file system (Playwright's WebKit on Linux)";
 
 export async function opfsFiles(page: Page): Promise<string[]> {
-	return page.evaluate(async () => {
-		const names: string[] = [];
-		const root = await navigator.storage.getDirectory();
-		for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) {
-			names.push(name);
-		}
-		return names;
-	});
+	return probe('list the files in OPFS', () =>
+		page.evaluate(async () => {
+			const names: string[] = [];
+			const root = await navigator.storage.getDirectory();
+			for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) {
+				names.push(name);
+			}
+			return names;
+		})
+	);
 }
