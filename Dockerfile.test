@@ -19,7 +19,7 @@ RUN bun scripts/build-ffmpeg.ts
 # The base image version MUST match the @playwright/test version in bun.lock —
 # the image ships the exact browser builds that library version expects, so no
 # `playwright install` is needed.
-FROM mcr.microsoft.com/playwright:v1.61.1-noble
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 # Bun drives installs and package scripts; the Vitest/Playwright binaries still
 # execute under the image's Node runtime via their shebangs.

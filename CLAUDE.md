@@ -20,6 +20,7 @@ yt-dlp-web runs the **unmodified** [yt-dlp](https://github.com/yt-dlp/yt-dlp) Py
 - Workflows (`.github/workflows/`, every action pinned to a full commit SHA with its tag in a comment): `ci.yml` (one `test` job: build and run `Dockerfile.test`), `pages.yml` (deploys to GitHub Pages only commits CI passed on `main`; needs the repository variable `RELAY_URL`), `check-ytdlp.yml` (weekly; fails when PyPI has a newer yt-dlp than the pins — then `bun run update:ytdlp`, which moves yt-dlp and the yt-dlp-ejs it pins together and verifies the downloads).
 - BrowserOS (a Chromium fork) runs only on developers' machines: `bun run test:browseros` launches `BROWSEROS_PATH` or attaches to `BROWSEROS_CDP_URL` (a running instance's DevTools endpoint) and skips without either. Specs import `test`/`expect` from `tests/e2e/fixtures.ts`, never straight from `@playwright/test`, so the attach mode can swap the browser.
 - Version ceilings that are not accidents: **TypeScript 6** (SvelteKit and svelte-check do not accept 7 yet) and **Vitest 4**.
+- A version floor that is not an accident: **Playwright 1.64.1**. Under 1.61.1, Firefox sometimes never ran main-world script in a freshly loaded page: `page.evaluate` hung forever in about 3% of new contexts while locators kept working, and only a reload brought it back. That was the unexplained Firefox e2e hang. 1.64.1 (Firefox 157) showed no stall in 300 contexts. `ci.test.ts` keeps `Dockerfile.test`'s image tag equal to the version `bun.lock` resolves.
 
 ## Architecture: the pipeline
 
