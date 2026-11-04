@@ -4,10 +4,36 @@
  * on retry included: a test that only passes on retry is still a failure to
  * explain, and its trace is the explanation.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+describe('Bun', () => {
+	it("is one version, named once: package.json's packageManager", () => {
+		const version = JSON.parse(source('package.json')).packageManager?.match(
+			/^bun@(\d+\.\d+\.\d+)$/
+		)?.[1];
+		expect(version, 'package.json packageManager: "bun@x.y.z"').toBeDefined();
+
+		// Every Dockerfile.test stage copies its bun binary from that release's image…
+		const images = [...source('Dockerfile.test').matchAll(/--from=oven\/bun:(\S+)/g)].map(
+			(match) => match[1]
+		);
+		expect(images.length).toBeGreaterThan(0);
+		for (const image of images) expect(image).toBe(version);
+
+		// …and every workflow that sets Bun up reads the version from package.json.
+		const workflows = readdirSync(new URL('.github/workflows/', import.meta.url))
+			.map((name) => source(`.github/workflows/${name}`))
+			.filter((workflow) => workflow.includes('oven-sh/setup-bun@'));
+		expect(workflows.length).toBeGreaterThan(0);
+		for (const workflow of workflows) {
+			expect(workflow).toContain('bun-version-file: package.json');
+			expect(workflow).not.toMatch(/bun-version:/);
+		}
+	});
+});
 
 describe('CI keeps the e2e results of every failed attempt', () => {
 	it('gives each Playwright run in the gate its own directory under test-results/', () => {
