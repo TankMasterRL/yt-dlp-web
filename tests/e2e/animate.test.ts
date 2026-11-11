@@ -8,7 +8,7 @@ import { decodeJxl } from '../helpers/jxl';
 import { oracle } from '../helpers/oracle';
 import { readAnimatedWebp, stillWebp } from '../helpers/webp';
 import { expect, test } from './fixtures';
-import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs } from './app';
+import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, probe } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
 
 const FIXTURE = new Uint8Array(
@@ -141,7 +141,9 @@ async function createAndSave(page: Page, dialog: Locator, label: string): Promis
 		result.getByRole('button', { name: `Save ${label}` }).click()
 	]);
 	expect(download.suggestedFilename()).toMatch(/^Big Buck Fixture.* \(0\.5s-1\.5s\) \[0\]\.\w+$/);
-	return new Uint8Array(readFileSync((await download.path())!));
+	return new Uint8Array(
+		readFileSync((await probe(`wait for the saved ${label} to download`, () => download.path()))!)
+	);
 }
 
 /** A frame sampled on a 16 × 9 grid: enough to tell the clip's frames apart. (browserDecode samples the same.) */
@@ -176,46 +178,48 @@ async function browserDecode(
 	bytes: Uint8Array,
 	type: string
 ): Promise<BrowserDecoded | null> {
-	return page.evaluate(
-		async ({ data, type }) => {
-			if (typeof ImageDecoder !== 'function' || !(await ImageDecoder.isTypeSupported(type))) {
-				return null;
-			}
-			const decoder = new ImageDecoder({ data: Uint8Array.from(data), type });
-			await decoder.tracks.ready;
-			await decoder.completed;
-			const track = decoder.tracks.selectedTrack!;
-			const frames = [];
-			const durations = [];
-			for (let i = 0; i < track.frameCount; i++) {
-				const { image } = await decoder.decode({ frameIndex: i });
-				const [width, height] = [image.displayWidth, image.displayHeight];
-				const canvas = new OffscreenCanvas(width, height);
-				const context = canvas.getContext('2d')!;
-				context.drawImage(image, 0, 0);
-				const pixels = context.getImageData(0, 0, width, height).data;
-				const grid: number[] = [];
-				for (let gy = 0; gy < 9; gy++) {
-					for (let gx = 0; gx < 16; gx++) {
-						const x = Math.floor(((gx + 0.5) * width) / 16);
-						const y = Math.floor(((gy + 0.5) * height) / 9);
-						const at = (y * width + x) * 4;
-						grid.push(pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]);
-					}
+	return probe(`decode the ${type} in the browser`, () =>
+		page.evaluate(
+			async ({ data, type }) => {
+				if (typeof ImageDecoder !== 'function' || !(await ImageDecoder.isTypeSupported(type))) {
+					return null;
 				}
-				frames.push({ width, height, grid });
-				durations.push(image.duration ?? 0);
-				image.close();
-			}
-			decoder.close();
-			return {
-				frameCount: track.frameCount,
-				repetitionCount: track.repetitionCount,
-				durations,
-				frames
-			};
-		},
-		{ data: [...bytes], type }
+				const decoder = new ImageDecoder({ data: Uint8Array.from(data), type });
+				await decoder.tracks.ready;
+				await decoder.completed;
+				const track = decoder.tracks.selectedTrack!;
+				const frames = [];
+				const durations = [];
+				for (let i = 0; i < track.frameCount; i++) {
+					const { image } = await decoder.decode({ frameIndex: i });
+					const [width, height] = [image.displayWidth, image.displayHeight];
+					const canvas = new OffscreenCanvas(width, height);
+					const context = canvas.getContext('2d')!;
+					context.drawImage(image, 0, 0);
+					const pixels = context.getImageData(0, 0, width, height).data;
+					const grid: number[] = [];
+					for (let gy = 0; gy < 9; gy++) {
+						for (let gx = 0; gx < 16; gx++) {
+							const x = Math.floor(((gx + 0.5) * width) / 16);
+							const y = Math.floor(((gy + 0.5) * height) / 9);
+							const at = (y * width + x) * 4;
+							grid.push(pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]);
+						}
+					}
+					frames.push({ width, height, grid });
+					durations.push(image.duration ?? 0);
+					image.close();
+				}
+				decoder.close();
+				return {
+					frameCount: track.frameCount,
+					repetitionCount: track.repetitionCount,
+					durations,
+					frames
+				};
+			},
+			{ data: [...bytes], type }
+		)
 	);
 }
 
