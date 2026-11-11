@@ -6,7 +6,9 @@
 	import type { LibraryItem } from '$lib/storage/db';
 	import { getLibrary } from '$lib/storage/instance';
 	import { exportFileName, progressLabel, statusLabel } from '$lib/storage/present';
+	import AnimationDialog from '$lib/ui/AnimationDialog.svelte';
 	import PlayerDialog from '$lib/ui/PlayerDialog.svelte';
+	import { saveFile } from '$lib/ui/save';
 
 	const library = getLibrary(appEndpoints());
 
@@ -16,6 +18,7 @@
 	let storage = $state<{ usage: number; quota: number } | null>(null);
 	let persisted = $state<boolean | null>(null);
 	let playing = $state<{ item: LibraryItem; file: File } | null>(null);
+	let animating = $state<{ item: LibraryItem; file: File } | null>(null);
 	let confirmDelete = $state<string | null>(null);
 	let notice = $state<string | null>(null);
 	const thumbnails = new Map<string, string>();
@@ -69,32 +72,12 @@
 		playing = { item, file: await library.file(item.id) };
 	}
 
+	async function animate(item: LibraryItem) {
+		animating = { item, file: await library.file(item.id) };
+	}
+
 	async function save(item: LibraryItem) {
-		const file = await library.file(item.id);
-		const name = exportFileName(item);
-		const picker = (
-			window as {
-				showSaveFilePicker?: (o: { suggestedName: string }) => Promise<FileSystemFileHandle>;
-			}
-		).showSaveFilePicker;
-		if (picker) {
-			try {
-				const handle = await picker({ suggestedName: name });
-				const writable = await handle.createWritable();
-				await writable.write(file);
-				await writable.close();
-				return;
-			} catch (e) {
-				if ((e as DOMException).name === 'AbortError') return;
-				// Fall through to a plain download.
-			}
-		}
-		const url = URL.createObjectURL(file);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = name;
-		link.click();
-		setTimeout(() => URL.revokeObjectURL(url), 60_000);
+		await saveFile(await library.file(item.id), exportFileName(item));
 	}
 
 	async function remove(item: LibraryItem) {
@@ -197,6 +180,13 @@
 								onclick={() => play(item)}
 								aria-label="Play {item.title}">Play</button
 							>
+							{#if item.kind !== 'audio'}
+								<button
+									type="button"
+									onclick={() => animate(item)}
+									aria-label="Make an animated image from {item.title}">Animate</button
+								>
+							{/if}
 							<button
 								type="button"
 								onclick={() => save(item)}
@@ -252,6 +242,10 @@
 		kind={playing.item.kind}
 		onclose={() => (playing = null)}
 	/>
+{/if}
+
+{#if animating}
+	<AnimationDialog file={animating.file} item={animating.item} onclose={() => (animating = null)} />
 {/if}
 
 <style>

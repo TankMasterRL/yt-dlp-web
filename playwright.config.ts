@@ -16,7 +16,12 @@ const projects: Project[] = [
 		name: 'chromium',
 		use: {
 			...devices['Desktop Chrome'],
-			launchOptions: chromiumPath ? { executablePath: chromiumPath } : {}
+			launchOptions: {
+				...(chromiumPath ? { executablePath: chromiumPath } : {}),
+				// Chromium's JPEG XL decoder is still behind a flag: with it, e2e checks the
+				// app's JPEG XL output in a real browser too. Nothing else depends on it.
+				args: ['--enable-features=JXLImageFormat']
+			}
 		}
 	}
 ];

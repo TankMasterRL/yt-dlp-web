@@ -16,7 +16,8 @@ Browser (static app)
 ├─ engine worker ── Pyodide + yt-dlp ──sync XHR──▶ Worker /relay   (pages, APIs, player JS)
 │                                      ──sync XHR──▶ Worker /solve   (JS challenges, sandboxed)
 ├─ download worker ─ ranged fetches through /relay ──▶ OPFS (resumable)
-└─ remux worker ─── FFmpeg (WebAssembly), only when you merge ──▶ OPFS
+├─ remux worker ─── FFmpeg (WebAssembly), only when you merge ──▶ OPFS
+└─ animate worker ─ GIF, APNG, WebP, AVIF or JPEG XL, only while it makes one
 
 Cloudflare Worker: holds no secrets, stores nothing, parses nothing
 ├─ /relay  one browser request → one upstream request, host allowlist, never follows redirects
@@ -34,6 +35,20 @@ Cloudflare Worker: holds no secrets, stores nothing, parses nothing
   the _best_ quality, which usually comes as separate video and audio streams, the page offers a
   merge. That merge is a stream copy with FFmpeg compiled to WebAssembly, never a re-encode, and
   FFmpeg is only loaded when you ask for one.
+- **Animated images from your videos.** Pick a stretch of any video in the library on a timeline,
+  drag the crop handles over the picture, choose the format, frame rate and width, and the page
+  makes a looping animation. The browser decodes the frames itself; a worker encodes them, with no
+  FFmpeg needed:
+
+  | Format  | Made by                                                      | Where                                    |
+  | ------- | ------------------------------------------------------------ | ---------------------------------------- |
+  | GIF     | the app's own encoder (256 colors, dithered)                 | every browser                            |
+  | APNG    | the app's own encoder (lossless, zlib by the browser)        | every browser                            |
+  | JPEG XL | the app's own encoder (lossless)                             | every browser; few can show it yet       |
+  | WebP    | the browser's WebP encoder, frame by frame, muxed by the app | browsers whose canvas makes WebP         |
+  | AVIF    | the browser's AV1 encoder (WebCodecs), muxed by the app      | browsers that encode AV1, such as Chrome |
+
+  The page only offers what the browser in front of it can make.
 
 Read on in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
