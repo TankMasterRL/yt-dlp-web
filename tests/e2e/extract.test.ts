@@ -1,3 +1,4 @@
+import type { APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { ENGINE_BOOT_MS, EXTRACTION_MS, engineReady } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
@@ -67,13 +68,31 @@ test.describe('extraction in a real browser worker', () => {
 	});
 });
 
+/**
+ * This app at an origin other than baseURL's (http://localhost:4173): the
+ * loopback address the preview server listens on, by number. Which one that
+ * is depends on the machine — `localhost` is 127.0.0.1 on some and ::1 on
+ * others (GitHub's runners) — so ask which answers.
+ */
+async function sameAppElsewhere(request: APIRequestContext): Promise<string> {
+	for (const origin of ['http://127.0.0.1:4173', 'http://[::1]:4173']) {
+		const answers = await request.head(`${origin}/`, { timeout: 5_000 }).then(
+			() => true,
+			() => false
+		);
+		if (answers) return origin;
+	}
+	throw new Error('The preview server answers on neither 127.0.0.1 nor ::1');
+}
+
 test('a relay that does not answer this page is named, and the library is pointed to', async ({
-	page
+	page,
+	request
 }) => {
 	test.setTimeout(ENGINE_BOOT_MS);
 	// The same app from an origin the fixture relay does not admit (it admits
 	// http://localhost:4173): to this page, the relay is as good as switched off.
-	await page.goto('http://127.0.0.1:4173/');
+	await page.goto(`${await sameAppElsewhere(request)}/`);
 	const note = page.locator('[data-relay="unreachable"]');
 	await expect(note).toContainText("The relay at localhost:4174 isn't answering this page", {
 		timeout: ENGINE_BOOT_MS
