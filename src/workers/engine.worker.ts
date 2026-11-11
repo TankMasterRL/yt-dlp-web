@@ -7,7 +7,7 @@
  */
 import type { EngineLoad, EngineProgress, EngineRequest } from '$lib/engine/client';
 import { bootEngine, type Engine, type ExtractResult } from '$lib/engine/runtime';
-import { createSyncSolver, createSyncTransport, probeSolver } from '$lib/relay/client';
+import { createSyncSolver, createSyncTransport, probeRelay } from '$lib/relay/client';
 import { serveWorker } from '$lib/workers/protocol';
 
 let engine: Engine | undefined;
@@ -28,8 +28,11 @@ serveWorker<EngineLoad, EngineRequest, ExtractResult, EngineProgress>({
 	async load({ assetsBase, relayEndpoint, solveEndpoint }, progress) {
 		// Probed once: SandboxJCP.is_available() must not touch the network, and
 		// yt-dlp picks YouTube clients that need no solving when it is unavailable.
-		const canSolve = await probeSolver(solveEndpoint);
-		progress({ kind: 'capabilities', solver: canSolve });
+		// A relay that does not answer at all is reported too (the page says so),
+		// but the engine still starts: the Worker may come back.
+		const relay = await probeRelay(solveEndpoint);
+		progress({ kind: 'capabilities', relay });
+		const canSolve = relay === 'solves';
 		const indexURL = new URL('pyodide/', assetsBase).href;
 		// Loaded at runtime from static/pyodide/, not bundled: Pyodide locates its
 		// wasm and stdlib relative to its own URL.

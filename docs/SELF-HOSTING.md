@@ -6,7 +6,10 @@ yt-dlp-web has two parts:
 2. **the relay Worker** (`worker/`): `/relay` carries bytes across CORS, and `/solve` runs YouTube's
    player JavaScript in a sandbox.
 
-The app cannot work without the relay: youtube.com does not let pages on other origins read it.
+Fetching from sites needs the relay: youtube.com does not let pages on other origins read it. The
+relay is optional, though. Built without one (`VITE_RELAY_URL=none`), the app is a private library
+for videos imported from the device — played, saved and made into animated images in the browser
+— and fetches nothing from anywhere.
 
 Pick a layout:
 
@@ -15,10 +18,13 @@ Pick a layout:
 | **Static host with headers + Worker** | Cloudflare Pages, Netlify, Caddy, … | its own `workers.dev` or custom domain | ✓ (`build/_headers`, `deploy/Caddyfile`) | ✓                                      |
 | **All-in-one Worker**                 | the Worker's static assets          | same origin                            | ✓ (`build/_headers`)                     | the remux core only (25 MiB asset cap) |
 | **GitHub Pages + Worker**             | GitHub Pages                        | its own domain                         | ✗ (the page's `<meta>` CSP only)         | ✓                                      |
+| **Any static host, no Worker**        | any of the above                    | none: nothing is fetched               | as the host allows                       | — (nothing is downloaded to merge)     |
 
 `docs/SECURITY.md` explains what the headers add and what GitHub Pages gives up.
 
 ## 1. The relay Worker
+
+Skip this for a build without a relay (section 2, `VITE_RELAY_URL=none`).
 
 You need a Cloudflare account, then `bunx wrangler login` once.
 
@@ -54,12 +60,25 @@ VITE_RELAY_URL=https://yt-dlp-web.<account>.workers.dev bun run build
 | Variable                  | Meaning                                                                                                                                                   |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VITE_RELAY_URL`          | The relay's URL. Its origin becomes the only extra origin in the CSP's `connect-src`. Leave it unset when the relay shares the app's origin (all-in-one). |
+| `VITE_RELAY_URL=none`     | No relay at all. The download page says the site fetches nothing; no engine starts, and Pyodide, the wheels and FFmpeg are left out of `build/`.          |
 | `BASE_PATH`               | Serve from a subpath, e.g. `/yt-dlp-web`. The paths in `build/_headers` follow it.                                                                        |
 | `YT_DLP_WEB_FFMPEG=remux` | Ship the remux core `bun run build:ffmpeg` compiled instead of ffmpeg.wasm: ~2.5 MiB instead of ~31 MiB, LGPL instead of GPL. Run the command first.      |
 | `YT_DLP_WEB_FFMPEG=0`     | Leave FFmpeg out: no merging of separate video and audio, and no GPL code shipped.                                                                        |
 
 `build/` is the whole site. `build/_headers` holds its security headers for hosts that read that
 file.
+
+Without a relay:
+
+```bash
+VITE_RELAY_URL=none bun run build
+```
+
+The CSP's `connect-src` is then just `'self'`. No PyPI download is needed either: the wheels are
+neither fetched nor shipped. Upload `build/` to any of the hosts below. The library imports, plays,
+saves and animates the videos people already have, and nothing they import leaves their browser.
+Building again with a relay's URL later adds the download page; the library keeps what was
+imported (it lives in each visitor's browser, under the site's origin).
 
 ## 3. Hosting it
 
@@ -87,12 +106,15 @@ the origin of the `VITE_RELAY_URL` you built with. `SITE_ROOT` overrides where `
 `.github/workflows/pages.yml` deploys every commit on `main` that CI passed:
 
 1. **Settings → Pages → Source: GitHub Actions.**
-2. **Settings → Secrets and variables → Actions → Variables:** add `RELAY_URL`, your relay's URL.
+2. To fetch from sites: **Settings → Secrets and variables → Actions → Variables:** add
+   `RELAY_URL`, your relay's URL.
 3. In `worker/wrangler.jsonc`, `ALLOWED_ORIGINS` must include `https://<owner>.github.io` (a custom
    domain's origin instead, if you use one). Then redeploy the Worker.
 
 The workflow builds with the base path GitHub Pages reports (`/<repository>`, or none on a custom
-domain) and `VITE_RELAY_URL=$RELAY_URL`. It fails with a clear message if `RELAY_URL` is not set.
+domain) and `VITE_RELAY_URL=$RELAY_URL`. Without `RELAY_URL` it builds without a relay
+(`VITE_RELAY_URL=none`) and says so in a notice on the run: the site then imports and animates
+videos from the device only. Set `RELAY_URL` later and the next deploy has the download page.
 
 GitHub Pages cannot send headers, and all project sites of an account share one origin: see
 `docs/SECURITY.md`.
@@ -118,8 +140,13 @@ ffmpeg.wasm cannot come along: Workers Static Assets caps a file at 25 MiB and i
 ## Checking a deployment
 
 - Open the app. The status line should read _yt-dlp … ready_. If `/solve` cannot solve, a note
-  says so.
+  says so. If the relay does not answer at all — the Worker is switched off or not deployed, or its
+  `ALLOWED_ORIGINS` leaves out the app's origin — a note says _The relay at … isn't answering this
+  page_; the library still imports and animates videos from the device. A build without a relay
+  says _This site has no relay_ instead, and starts no engine.
 - `curl -I https://<app>/` should show `content-security-policy: frame-ancestors 'none'…`.
   `curl -I https://<app>/_app/immutable/workers/<engine worker>.js` should show the worker's own
   policy. On GitHub Pages neither appears.
 - Fetch a video's formats and download one. It lands in **Library**, plays there, and can be saved.
+- In **Library**, _Import videos…_ a file from your device. It plays, saves back unchanged, and
+  _Animate_ makes a GIF of it.

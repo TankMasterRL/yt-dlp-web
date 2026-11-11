@@ -1,33 +1,35 @@
 /**
  * The app's one Library, wired to the browser: IndexedDB, OPFS, the download
- * and remux workers, Web Locks and a BroadcastChannel for other tabs.
+ * and remux workers, a media element to open imported files, Web Locks and a
+ * BroadcastChannel for other tabs.
  * Browser-only — pages call it from their scripts, never from modules that
  * tests import.
  */
 import { activeDownloads } from '$lib/download/locks';
 import { workerDownloader } from '$lib/download/client';
+import type { AppEndpoints } from '$lib/endpoints';
 import { relayFetch } from '$lib/relay/client';
 import { workerRemuxer } from '$lib/remux/client';
 import { openLibraryDb, type LibraryDb } from './db';
+import { inspectFile } from './inspect';
 import { Library, type FileStore } from './library.svelte';
 
 let library: Library | undefined;
 
-/** `relay`: the relay endpoint; `assetsBase`: where ffmpeg/ is served, if it is. */
-export function getLibrary({
-	relay: relayEndpoint,
-	assetsBase
-}: {
-	relay: string;
-	assetsBase: string;
-}): Library {
+/**
+ * `relay`: the relay's endpoints, null in a build without one (then only
+ * imports land in the library); `assetsBase`: where ffmpeg/ is served, if it is.
+ */
+export function getLibrary({ relay, assetsBase }: AppEndpoints): Library {
+	const relayEndpoint = relay?.relay ?? null;
 	library ??= new Library({
 		db: lazyDb(),
 		downloader: workerDownloader(relayEndpoint),
 		remuxer: workerRemuxer(assetsBase),
 		files: opfsFiles,
 		activeDownloads: () => activeDownloads(),
-		fetchThumbnail: (url) => fetchThumbnail(relayEndpoint, url),
+		fetchThumbnail: relayEndpoint ? (url) => fetchThumbnail(relayEndpoint, url) : undefined,
+		inspect: inspectFile,
 		channel: new BroadcastChannel('yt-dlp-web:library')
 	});
 	return library;

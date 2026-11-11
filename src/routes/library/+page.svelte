@@ -4,13 +4,18 @@
 	import { appEndpoints } from '$lib/endpoints';
 	import { formatBytes, formatDuration } from '$lib/formats';
 	import type { LibraryItem } from '$lib/storage/db';
-	import { getLibrary } from '$lib/storage/instance';
+	import { importedTitle } from '$lib/storage/imported';
+	import { getLibrary, opfsAvailable } from '$lib/storage/instance';
 	import { exportFileName, progressLabel, statusLabel } from '$lib/storage/present';
 	import AnimationDialog from '$lib/ui/AnimationDialog.svelte';
 	import PlayerDialog from '$lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '$lib/ui/save';
 
-	const library = getLibrary(appEndpoints());
+	const endpoints = appEndpoints();
+	const library = getLibrary(endpoints);
+	/** What the file pickers offer: what browsers commonly play, and Matroska, which some systems type as nothing. */
+	const MEDIA_FILES = 'video/*,audio/*,.mkv,.mka,.webm,.opus';
+	const VIDEO_FILES = 'video/*,.mkv,.webm';
 
 	type Sort = 'newest' | 'oldest' | 'title' | 'size';
 	let query = $state('');
@@ -18,15 +23,31 @@
 	let storage = $state<{ usage: number; quota: number } | null>(null);
 	let persisted = $state<boolean | null>(null);
 	let playing = $state<{ item: LibraryItem; file: File } | null>(null);
-	let animating = $state<{ item: LibraryItem; file: File } | null>(null);
+	/** The video in the animation maker: a library item's, or a file opened straight from disk. */
+	let animating = $state<{ item: { title: string; formatId?: string }; file: File } | null>(null);
+	/** Whether this browser lets the app keep files (OPFS); null until asked. */
+	let canStore = $state<boolean | null>(null);
+	let importErrors = $state<string[]>([]);
+	/** The picked file the browser is opening, before it is imported. */
+	let opening = $state<string | null>(null);
+	let importInput: HTMLInputElement;
+	let animateInput: HTMLInputElement;
 	let confirmDelete = $state<string | null>(null);
 	let notice = $state<string | null>(null);
 	const thumbnails = new Map<string, string>();
 
 	onMount(() => {
 		void library.load();
-		void refreshStorage();
+		void opfsAvailable().then((available) => (canStore = available));
 		return () => thumbnails.forEach((url) => URL.revokeObjectURL(url));
+	});
+
+	// The storage meter follows the library: it is read again whenever an item comes, goes or
+	// changes status (not on every progress report).
+	const shape = $derived(library.items.map((i) => `${i.id}:${i.status}`).join());
+	$effect(() => {
+		void shape;
+		void refreshStorage();
 	});
 
 	const visible = $derived.by(() => {
@@ -76,6 +97,30 @@
 		animating = { item, file: await library.file(item.id) };
 	}
 
+	/** Import each picked file in turn: each is opened first, and copied in if the browser plays it. */
+	async function importPicked() {
+		const files = [...(importInput.files ?? [])];
+		// Picking the same file again must fire `change` again.
+		importInput.value = '';
+		importErrors = [];
+		for (const file of files) {
+			opening = file.name;
+			try {
+				await library.importFile(file);
+			} catch (e) {
+				importErrors = [...importErrors, `${file.name} wasn't imported: ${(e as Error).message}`];
+			}
+		}
+		opening = null;
+	}
+
+	/** Open a file in the animation maker straight from disk: nothing is copied. */
+	function animatePicked() {
+		const file = animateInput.files?.[0];
+		animateInput.value = '';
+		if (file) animating = { item: { title: importedTitle(file.name) }, file };
+	}
+
 	async function save(item: LibraryItem) {
 		await saveFile(await library.file(item.id), exportFileName(item));
 	}
@@ -86,7 +131,6 @@
 		const url = thumbnails.get(item.id);
 		if (url) URL.revokeObjectURL(url);
 		thumbnails.delete(item.id);
-		void refreshStorage();
 	}
 </script>
 
@@ -96,7 +140,8 @@
 
 <h1>Library</h1>
 <p class="lede">
-	Everything you download is kept in this browser's private storage — nothing is uploaded anywhere.
+	Everything you {endpoints.relay ? 'download or import' : 'import'} is kept in this browser's private
+	storage — nothing is uploaded anywhere.
 </p>
 
 <section class="storage" aria-label="Storage">
@@ -110,6 +155,47 @@
 		<button type="button" onclick={keepDownloads}>Keep my downloads</button>
 	{/if}
 	{#if notice}<p class="notice" role="status">{notice}</p>{/if}
+</section>
+
+<section class="device" aria-label="Videos on this device">
+	<div class="device-actions">
+		<button
+			type="button"
+			class="primary"
+			onclick={() => importInput.click()}
+			disabled={canStore === false || opening !== null}>Import videos…</button
+		>
+		<button type="button" onclick={() => animateInput.click()}>Animate a video file…</button>
+	</div>
+	<p class="hint">
+		Import videos you already have: they're copied into this browser's private storage, to play and
+		to make animated images from. Or animate one straight from your disk, without copying it.
+	</p>
+	<input
+		bind:this={importInput}
+		type="file"
+		accept={MEDIA_FILES}
+		multiple
+		hidden
+		aria-label="Videos to import"
+		onchange={importPicked}
+	/>
+	<input
+		bind:this={animateInput}
+		type="file"
+		accept={VIDEO_FILES}
+		hidden
+		aria-label="Video to animate"
+		onchange={animatePicked}
+	/>
+	{#if canStore === false}
+		<p class="note" data-storage="unavailable">
+			This browser gives the page no private file storage here — private windows often don't — so
+			nothing can be imported. A video can still be animated straight from your disk.
+		</p>
+	{/if}
+	{#if opening}<p class="hint" role="status">Opening {opening}…</p>{/if}
+	{#each importErrors as error, i (i)}<p class="error" role="alert">{error}</p>{/each}
 </section>
 
 {#if library.items.length}
@@ -129,7 +215,7 @@
 		</label>
 	</div>
 
-	<ul class="items" aria-label="Downloads">
+	<ul class="items" aria-label="Library items">
 		{#each visible as item (item.id)}
 			{@const live = library.live[item.id]}
 			{@const thumb = thumbnailUrl(item)}
@@ -143,14 +229,15 @@
 					<div class="body">
 						<h2 id="title-{item.id}">{item.title}</h2>
 						<p class="meta">
-							{#if item.uploader}<span>{item.uploader}</span>{/if}
+							{#if item.origin === 'import'}<span>From this device</span>
+							{:else if item.uploader}<span>{item.uploader}</span>{/if}
 							{#if item.duration}<span>{formatDuration(item.duration)}</span>{/if}
 							<span>{item.resolution}</span>
 							<span>{item.ext}</span>
 						</p>
 						<p class="status">
-							<span class="badge {item.status}">{statusLabel(item.status)}</span>
-							{#if item.status === 'downloading'}
+							<span class="badge {item.status}">{statusLabel(item.status, item.origin)}</span>
+							{#if item.status === 'downloading' || item.status === 'importing'}
 								{@const progress = live ?? {
 									bytesDone: item.bytesDone,
 									bytesTotal: item.bytesTotal
@@ -198,7 +285,8 @@
 								onclick={() => library.pause(item.id)}
 								aria-label="Pause {item.title}">Pause</button
 							>
-						{:else if item.status !== 'merging'}
+						{:else if (item.status === 'paused' || item.status === 'failed') && item.origin !== 'import'}
+							<!-- An import cannot be resumed: the picked file was only lent. -->
 							<button
 								type="button"
 								onclick={() => library.resume(item.id)}
@@ -231,7 +319,9 @@
 	</ul>
 {:else if library.loaded}
 	<p class="empty">
-		Nothing here yet. <a href={resolve('/')}>Download something</a> and it will appear here.
+		Nothing here yet.
+		{#if endpoints.relay}<a href={resolve('/')}>Download something</a> or import videos you already have,
+			and they will appear here.{:else}Import videos you already have, and they will appear here.{/if}
 	</p>
 {/if}
 
@@ -272,6 +362,35 @@
 
 	.persisted {
 		color: var(--ok);
+	}
+
+	.device {
+		display: grid;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+	}
+
+	.device-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.device p {
+		margin: 0;
+		font-size: 0.9rem;
+	}
+
+	.device .hint {
+		color: var(--muted);
+	}
+
+	.device .note {
+		color: var(--warn);
 	}
 
 	.notice {

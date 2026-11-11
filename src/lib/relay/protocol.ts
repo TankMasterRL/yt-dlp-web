@@ -29,6 +29,13 @@ export const RELAY_PATH = '/relay';
  */
 export const SOLVE_PATH = '/solve';
 
+/**
+ * VITE_RELAY_URL for a build without a relay: the app then fetches nothing
+ * from other sites, and the library holds what is imported from this device.
+ * (csp.config.js, plain JS, spells it out too; csp.config.test.ts holds them together.)
+ */
+export const NO_RELAY = 'none';
+
 export const RelayHeader = {
 	url: 'X-Relay-Url',
 	headers: 'X-Relay-Headers',

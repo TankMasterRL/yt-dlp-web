@@ -1,7 +1,9 @@
 # Third-party software shipped with the app
 
 A build of yt-dlp-web serves these to the browser from its own origin. Development tools (Bun,
-Vite, Vitest, Playwright, Wrangler, …) are not shipped; their licenses are in `node_modules/`.
+Vite, Vitest, Playwright, Wrangler, …) are not shipped; their licenses are in `node_modules/`. A
+build without a relay (`VITE_RELAY_URL=none`) ships only Svelte: it never runs yt-dlp or merges,
+so it leaves out the wheels, Pyodide and FFmpeg.
 
 | Component                                                                                               | Version                                 | License                                                                                                                                             | Served as                                                                      | Source                                                                                  |
 | ------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |

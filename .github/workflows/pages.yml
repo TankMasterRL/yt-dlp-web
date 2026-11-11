@@ -1,7 +1,10 @@
 # Deploys to GitHub Pages only what CI passed on main. Needs:
 #   - Settings → Pages → Source: GitHub Actions
-#   - the repository variable RELAY_URL: your relay Worker's URL, whose
-#     ALLOWED_ORIGINS must include https://<owner>.github.io (docs/SELF-HOSTING.md)
+# and, to fetch videos from sites, the repository variable RELAY_URL: your relay
+# Worker's URL, whose ALLOWED_ORIGINS must include https://<owner>.github.io
+# (docs/SELF-HOSTING.md). Without it the site is built without a relay
+# (VITE_RELAY_URL=none): a library for videos imported from the device, and
+# the animation maker.
 # GitHub Pages cannot send headers: see docs/SECURITY.md for what that costs.
 name: Pages
 
@@ -26,11 +29,10 @@ jobs:
     env:
       RELAY_URL: ${{ vars.RELAY_URL }}
     steps:
-      - name: Require the relay URL
+      - name: Say whether the site has a relay
         if: env.RELAY_URL == ''
         run: |
-          echo "::error title=RELAY_URL is not set::Set the repository variable RELAY_URL (Settings → Secrets and variables → Actions → Variables) to your relay Worker's URL. See docs/SELF-HOSTING.md."
-          exit 1
+          echo "::notice title=No relay::RELAY_URL is not set, so this site is built without a relay: it imports, plays and animates videos from the device, and fetches nothing. To fetch from sites, deploy the relay Worker and set the repository variable RELAY_URL to its URL. See docs/SELF-HOSTING.md."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The commit CI tested, not whatever main is by now.
@@ -47,7 +49,7 @@ jobs:
         env:
           # '/<repository>' on <owner>.github.io, '' on a custom domain.
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          VITE_RELAY_URL: ${{ env.RELAY_URL }}
+          VITE_RELAY_URL: ${{ env.RELAY_URL || 'none' }}
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: build

@@ -2,9 +2,11 @@
 
 Run [yt-dlp](https://github.com/yt-dlp/yt-dlp) in your browser. The real, unmodified yt-dlp Python
 package runs client-side in [Pyodide](https://pyodide.org). Downloads go into your browser's
-private file system and show up in a local library. A small Cloudflare Worker does the two things
-a web page is not allowed to do: relay bytes across CORS, and run YouTube's JavaScript challenges
-in a network-severed sandbox.
+private file system and show up in a local library, next to videos you import from your device.
+A small Cloudflare Worker does the two things a web page is not allowed to do: relay bytes across
+CORS, and run YouTube's JavaScript challenges in a network-severed sandbox. The Worker is
+optional: without it, the app is a private library and animation maker for the videos you
+already have.
 
 ![The download page: yt-dlp has listed a video's formats and offers the best video and audio merged into one file](docs/screenshot.png)
 
@@ -16,6 +18,7 @@ Browser (static app)
 ├─ engine worker ── Pyodide + yt-dlp ──sync XHR──▶ Worker /relay   (pages, APIs, player JS)
 │                                      ──sync XHR──▶ Worker /solve   (JS challenges, sandboxed)
 ├─ download worker ─ ranged fetches through /relay ──▶ OPFS (resumable)
+│                    files you import from your device ──▶ OPFS
 ├─ remux worker ─── FFmpeg (WebAssembly), only when you merge ──▶ OPFS
 └─ animate worker ─ GIF, APNG, WebP, AVIF or JPEG XL, only while it makes one
 
@@ -35,6 +38,11 @@ Cloudflare Worker: holds no secrets, stores nothing, parses nothing
   the _best_ quality, which usually comes as separate video and audio streams, the page offers a
   merge. That merge is a stream copy with FFmpeg compiled to WebAssembly, never a re-encode, and
   FFmpeg is only loaded when you ask for one.
+- **Videos you already have.** _Import videos…_ in the library copies files from your device into
+  the same private storage, after the browser has opened each one as it will play it: they play,
+  save back unchanged and animate like downloads. _Animate a video file…_ opens one straight from
+  disk in the animation maker instead, copying nothing (that works without private storage, too).
+  Nothing you import is uploaded anywhere.
 - **Animated images from your videos.** Pick a stretch of any video in the library on a timeline,
   drag the crop handles over the picture, choose the format, frame rate and width, and the page
   makes a looping animation. The browser decodes the frames itself; a worker encodes them, with no
@@ -82,13 +90,24 @@ VITE_RELAY_URL=http://localhost:8787 bun run dev     # the app, on http://localh
 `bun run dev` and `bun run build` first fetch the pinned yt-dlp wheels (hash-checked) and copy them
 into `static/`, along with Pyodide and FFmpeg (see below).
 
-To deploy, see [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md). It covers the three layouts:
+To deploy, see [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md). It covers the layouts:
 
 - a static host with security headers plus the Worker;
 - the Worker serving everything from one origin;
-- GitHub Pages plus the Worker (there is a workflow for it).
+- GitHub Pages plus the Worker (there is a workflow for it);
+- any static host without the Worker: `VITE_RELAY_URL=none bun run build`. The app then fetches
+  nothing from other sites and ships no Pyodide, wheels or FFmpeg; it imports, plays and animates
+  the videos you already have. The GitHub Pages workflow builds this when no `RELAY_URL` is set.
 
-`/solve` needs a paid Workers plan. Without it the app still works, with fewer YouTube formats.
+`/solve` needs a paid Workers plan. Without it the app still works, with fewer YouTube formats. If
+the Worker is switched off after a deploy, the download page says the relay isn't answering, and
+the library keeps working.
+
+For a quick look without the Worker:
+
+```bash
+VITE_RELAY_URL=none bun run dev                      # the app, on http://localhost:5173
+```
 
 By default the relay only reaches YouTube's hosts. yt-dlp can extract many more sites if you add
 their hosts to the relay's `ALLOWED_HOSTS`, one by one.
@@ -125,7 +144,7 @@ Red/green throughout, and hermetic by default: CI never touches YouTube or a dep
 | `bun run test`                                     | Vitest: units (jsdom), plus **real** Pyodide with the real pinned wheels, the real FFmpeg cores (the remux core once built) and the Worker in real workerd |
 | `bun run test:e2e`                                 | Playwright against the built app and the real relay handler, with a fake video site upstream. Fails on any CSP or Trusted Types violation                  |
 | `bun run test:browseros`                           | The same e2e suite in [BrowserOS](https://www.browseros.com): set `BROWSEROS_PATH` (launch it) or `BROWSEROS_CDP_URL` (attach to it). Skips otherwise      |
-| `bun run test:docker`                              | Exactly what CI runs: format, audit, check, all of the above, e2e on Chromium, Firefox and WebKit                                                          |
+| `bun run test:docker`                              | Exactly what CI runs: format, audit, check, all of the above, e2e on Chromium, Firefox and WebKit, then on a build without a relay                         |
 | `LIVE_APP_URL=… bunx playwright test --grep @live` | Real YouTube through a deployed app and relay                                                                                                              |
 
 Also: `bun run check` (svelte-check + tsc), `bun run format:check`, `bun run audit`.

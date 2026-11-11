@@ -5,12 +5,13 @@ import {
 	RelayError,
 	createSyncSolver,
 	createSyncTransport,
-	probeSolver,
+	probeRelay,
 	relayEndpoint,
+	relayEndpoints,
 	relayFetch,
 	solveEndpoint
 } from './client';
-import { RelayHeader, decodeHeaderList, encodeHeaderJson } from './protocol';
+import { NO_RELAY, RelayHeader, decodeHeaderList, encodeHeaderJson } from './protocol';
 
 /** A scriptable stand-in for XMLHttpRequest, recording what the transport did. */
 class FakeXhr {
@@ -210,19 +211,33 @@ describe('solver client (engine worker)', () => {
 		expect(() => createSyncSolver('/solve', Xhr)('x')).toThrow(/unexpected structure/);
 	});
 
-	it('probes availability without solving anything', async () => {
+	it('probes the relay without solving anything: can it solve, only relay, or is it not answering?', async () => {
 		const status = (code: number) => async () => new Response(null, { status: code });
-		expect(await probeSolver('/solve', status(204))).toBe(true);
-		expect(await probeSolver('/solve', status(501))).toBe(false);
+		expect(await probeRelay('/solve', status(204))).toBe('solves');
+		expect(await probeRelay('/solve', status(501))).toBe('relays');
+		// Nothing of ours there: a static host's 404, or a Worker that refuses this origin.
+		expect(await probeRelay('/solve', status(404))).toBe('unreachable');
+		expect(await probeRelay('/solve', status(403))).toBe('unreachable');
+		// Switched off, or no CORS for this origin.
 		expect(
-			await probeSolver('/solve', async () => {
+			await probeRelay('/solve', async () => {
 				throw new TypeError('Failed to fetch');
 			})
-		).toBe(false);
+		).toBe('unreachable');
 	});
 
 	it('derives the endpoint from the relay URL', () => {
 		expect(solveEndpoint(undefined)).toBe('/solve');
+		expect(relayEndpoints(undefined)).toEqual({ relay: '/relay', solve: '/solve' });
+		expect(relayEndpoints('https://w.example.workers.dev/')).toEqual({
+			relay: 'https://w.example.workers.dev/relay',
+			solve: 'https://w.example.workers.dev/solve'
+		});
+	});
+
+	it('has none in a build without a relay', () => {
+		expect(NO_RELAY).toBe('none');
+		expect(relayEndpoints(NO_RELAY)).toBeNull();
 		expect(solveEndpoint('https://w.example.workers.dev')).toBe(
 			'https://w.example.workers.dev/solve'
 		);

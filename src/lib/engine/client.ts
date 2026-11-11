@@ -4,6 +4,7 @@
  * the page's thread.
  */
 import engineWorkerUrl from '../../workers/engine.worker.ts?worker&url';
+import type { RelayProbe } from '$lib/relay/client';
 import { trustedWorkerUrl } from '$lib/trusted-types';
 import { WorkerClient } from '$lib/workers/protocol';
 import type { BootStage, ExtractResult, LogLevel } from './runtime';
@@ -24,8 +25,8 @@ export interface EngineRequest {
 
 export type EngineProgress =
 	| { kind: 'boot'; stage: BootStage }
-	/** Whether the deployment can solve YouTube's JS challenges (probed at boot). */
-	| { kind: 'capabilities'; solver: boolean }
+	/** What the relay can do (probed at boot): solve YouTube's JS challenges, only relay, or not answer. */
+	| { kind: 'capabilities'; relay: RelayProbe }
 	| { kind: 'log'; level: LogLevel; line: string };
 
 export type EngineClient = WorkerClient<EngineLoad, EngineRequest, ExtractResult, EngineProgress>;

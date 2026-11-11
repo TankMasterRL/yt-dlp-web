@@ -1,7 +1,8 @@
 /**
- * The download library: what has been (or is being) downloaded, as reactive
- * state. Bytes go to OPFS through the download worker; metadata to IndexedDB.
- * Every I/O dependency is injected (`getLibrary()` wires the browser ones).
+ * The library: what has been (or is being) downloaded or imported from this
+ * device, as reactive state. Bytes go to OPFS through the download worker;
+ * metadata to IndexedDB. Every I/O dependency is injected (`getLibrary()`
+ * wires the browser ones).
  */
 import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
 import type { DownloadProgress } from '$lib/download/download';
@@ -14,7 +15,8 @@ import {
 	type MergeContainer,
 	type MergePair
 } from '$lib/formats';
-import type { LibraryDb, LibraryItem, MergePart } from './db';
+import type { DownloadedItem, LibraryDb, LibraryItem, MergePart } from './db';
+import { importedItem, type MediaFacts } from './imported';
 
 export interface DownloadRequest {
 	itemId: string;
@@ -22,12 +24,27 @@ export interface DownloadRequest {
 	plan: DownloadPlan;
 }
 
+export interface ImportRequest {
+	itemId: string;
+	/** OPFS file to write. */
+	fileName: string;
+	/** The file picked on this device. */
+	file: File;
+}
+
+/** Writes bytes into OPFS: fetched through the relay, or copied from a file on this device. */
 export interface Downloader {
 	/** Resolves when the file is complete; rejects with an AbortError when cancelled. */
 	start(
 		request: DownloadRequest,
 		onProgress: (progress: DownloadProgress) => void
 	): Promise<{ bytesTotal: number }>;
+	/** Copies a picked file in; rejects with an AbortError when cancelled. */
+	importFile(
+		request: ImportRequest,
+		onProgress: (progress: DownloadProgress) => void
+	): Promise<{ bytesTotal: number }>;
+	/** Stops a download or an import. */
 	cancel(itemId: string): Promise<void>;
 }
 
@@ -66,8 +83,10 @@ export interface LibraryDeps {
 	files: FileStore;
 	/** Item ids some tab is downloading right now (Web Locks held by download workers). */
 	activeDownloads: () => Promise<Set<string>>;
-	/** Fetch a thumbnail through the relay; null when it cannot be had. */
+	/** Fetch a thumbnail through the relay; null when it cannot be had. Absent without a relay. */
 	fetchThumbnail?: (url: string) => Promise<Blob | null>;
+	/** Open a picked file the way playback will: rejects when the browser cannot play it. */
+	inspect?: (file: File) => Promise<MediaFacts>;
 	/** Tells other tabs the library changed. */
 	channel?: ChannelLike;
 	now?: () => number;
@@ -76,7 +95,7 @@ export interface LibraryDeps {
 
 export class Library {
 	items = $state<LibraryItem[]>([]);
-	/** Progress of downloads running in this tab, by item id. */
+	/** Progress of downloads and imports running in this tab, by item id. */
 	live = $state<Record<string, DownloadProgress>>({});
 	loaded = $state(false);
 
@@ -96,9 +115,16 @@ export class Library {
 		for (const item of items) {
 			// A tab closed mid-download leaves "downloading" behind with nobody
 			// holding its lock: it is really paused (the bytes so far are kept).
-			const busy = item.status === 'downloading' || item.status === 'merging';
+			// An import cannot go on: the picked file went with the tab.
+			const busy =
+				item.status === 'downloading' || item.status === 'merging' || item.status === 'importing';
 			if (busy && !active.has(item.id) && !(item.id in this.live)) {
-				item.status = 'paused';
+				if (item.origin === 'import') {
+					item.status = 'failed';
+					item.error = 'The import was interrupted: delete this and import the file again.';
+				} else {
+					item.status = 'paused';
+				}
 				await this.#deps.db.put(item);
 			}
 		}
@@ -110,7 +136,7 @@ export class Library {
 		const video = primaryVideo(info);
 		const id = this.#newId();
 		const plan = downloadPlan(format);
-		const item: LibraryItem = {
+		const item: DownloadedItem = {
 			id,
 			sourceUrl: video.webpage_url ?? format.url,
 			videoId: video.id,
@@ -131,9 +157,32 @@ export class Library {
 		};
 		await this.#save(item);
 		this.items = [item, ...this.items];
-		void this.#run(id);
+		this.#fetch(id);
 		if (video.thumbnail && this.#deps.fetchThumbnail)
 			void this.#attachThumbnail(id, video.thumbnail);
+		return item;
+	}
+
+	/**
+	 * Copy a media file from this device into the library. The browser opens it
+	 * first, as playback will: a file it cannot play is refused before anything
+	 * is stored. Resolves once the item exists; the copy runs on, like a download.
+	 */
+	async importFile(file: File): Promise<LibraryItem> {
+		if (!this.#deps.inspect) throw new Error('Importing is not available here');
+		const media = await this.#deps.inspect(file);
+		const item = importedItem({ id: this.#newId(), file, media, now: this.#now() });
+		await this.#save(item);
+		this.items = [item, ...this.items];
+		void this.#run(item.id, async (current) => {
+			const { bytesTotal } = await this.#deps.downloader.importFile(
+				{ itemId: current.id, fileName: current.fileName, file },
+				(progress) => {
+					this.live[current.id] = progress;
+				}
+			);
+			return bytesTotal;
+		});
 		return item;
 	}
 
@@ -148,7 +197,7 @@ export class Library {
 		};
 		const parts = [part('video', pair.video), part('audio', pair.audio)];
 		const sizes = parts.map((p) => p.plan.expectedBytes);
-		const item: LibraryItem = {
+		const item: DownloadedItem = {
 			id,
 			sourceUrl: video.webpage_url ?? pair.video.url,
 			videoId: video.id,
@@ -170,7 +219,7 @@ export class Library {
 		};
 		await this.#save(item);
 		this.items = [item, ...this.items];
-		void this.#run(id);
+		this.#fetch(id);
 		if (video.thumbnail && this.#deps.fetchThumbnail)
 			void this.#attachThumbnail(id, video.thumbnail);
 		return item;
@@ -185,13 +234,15 @@ export class Library {
 		await this.#deps.downloader.cancel(id);
 	}
 
+	/** Restart a paused or failed download. Imports cannot be: the picked file was only lent. */
 	async resume(id: string): Promise<void> {
 		const item = this.#find(id);
 		if (item?.status !== 'paused' && item?.status !== 'failed') return;
+		if (item.origin === 'import') return;
 		item.status = 'downloading';
 		item.error = undefined;
 		await this.#save(item);
-		void this.#run(id);
+		this.#fetch(id);
 	}
 
 	async remove(id: string): Promise<void> {
@@ -199,7 +250,8 @@ export class Library {
 		if (!item) return;
 		// ffmpeg holds the files and cannot be interrupted; merges take seconds.
 		if (item.status === 'merging') throw new Error('Wait for the merge to finish');
-		if (item.status === 'downloading') await this.#deps.downloader.cancel(id);
+		if (item.status === 'downloading' || item.status === 'importing')
+			await this.#deps.downloader.cancel(id);
 		await this.#deps.files.remove(item.fileName);
 		for (const part of item.parts ?? []) await this.#deps.files.remove(part.fileName);
 		await this.#deps.db.delete(id);
@@ -214,13 +266,20 @@ export class Library {
 		return this.#deps.files.get(item.fileName);
 	}
 
-	async #run(id: string): Promise<void> {
+	/** Run a download (or a download and merge) through the relay. */
+	#fetch(id: string): void {
+		void this.#run(id, (item) => {
+			if (item.origin === 'import') throw new Error('An imported file cannot be fetched');
+			return item.parts ? this.#downloadAndMerge(item) : this.#download(item);
+		});
+	}
+
+	/** Run `work` on the item, which ends complete, paused or failed. */
+	async #run(id: string, work: (item: LibraryItem) => Promise<number>): Promise<void> {
 		const item = this.#find(id)!;
 		this.live[id] = { bytesDone: item.bytesDone, bytesTotal: item.bytesTotal };
 		try {
-			const bytesTotal = item.parts
-				? await this.#downloadAndMerge(item)
-				: await this.#download(item);
+			const bytesTotal = await work(item);
 			Object.assign(item, {
 				status: 'complete',
 				bytesDone: bytesTotal,
@@ -230,7 +289,11 @@ export class Library {
 		} catch (e) {
 			const progress = this.live[id];
 			if (progress) item.bytesDone = progress.bytesDone;
-			if ((e as Error).name === 'AbortError') {
+			if (item.origin === 'import') {
+				item.status = 'failed';
+				item.error =
+					(e as Error).name === 'AbortError' ? 'The import was stopped' : (e as Error).message;
+			} else if ((e as Error).name === 'AbortError') {
 				item.status = 'paused';
 			} else {
 				item.status = 'failed';
@@ -242,7 +305,7 @@ export class Library {
 		if (this.#find(id)) await this.#save(item);
 	}
 
-	async #download(item: LibraryItem): Promise<number> {
+	async #download(item: DownloadedItem): Promise<number> {
 		const { bytesTotal } = await this.#deps.downloader.start(
 			{
 				itemId: item.id,
@@ -261,7 +324,7 @@ export class Library {
 	 * a finished part answers its next range request with 416 at once, so a
 	 * resume or a retry after a failed merge skips straight past it.
 	 */
-	async #downloadAndMerge(item: LibraryItem): Promise<number> {
+	async #downloadAndMerge(item: DownloadedItem): Promise<number> {
 		let done = 0;
 		for (const part of item.parts!) {
 			const { bytesTotal } = await this.#deps.downloader.start(

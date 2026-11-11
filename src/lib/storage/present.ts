@@ -8,9 +8,10 @@ const MAX_TITLE = 160;
 /**
  * A file name safe on Windows, macOS and Linux: no separators or reserved
  * characters, no control characters, no leading dots (hidden files, "..") and
- * no trailing dots or spaces (Windows strips them).
+ * no trailing dots or spaces (Windows strips them). Downloads are tagged with
+ * their format, `<title> [<format>].<ext>`; imported files have none.
  */
-export function exportFileName(item: Pick<LibraryItem, 'title' | 'formatId' | 'ext'>): string {
+export function exportFileName(item: { title: string; formatId?: string; ext: string }): string {
 	const title =
 		item.title
 			.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '_')
@@ -18,7 +19,7 @@ export function exportFileName(item: Pick<LibraryItem, 'title' | 'formatId' | 'e
 			.replace(/[. ]+$/, '')
 			.slice(0, MAX_TITLE)
 			.trim() || 'video';
-	return `${title} [${item.formatId}].${item.ext}`;
+	return item.formatId ? `${title} [${item.formatId}].${item.ext}` : `${title}.${item.ext}`;
 }
 
 export function progressLabel({ bytesDone, bytesTotal }: DownloadProgress): string {
@@ -30,11 +31,13 @@ export function progressLabel({ bytesDone, bytesTotal }: DownloadProgress): stri
 const STATUS: Record<ItemStatus, string> = {
 	downloading: 'Downloading',
 	merging: 'Merging',
+	importing: 'Importing',
 	paused: 'Paused',
 	complete: 'Downloaded',
 	failed: 'Failed'
 };
 
-export function statusLabel(status: ItemStatus): string {
-	return STATUS[status];
+/** An item's status in words; a finished import was imported, not downloaded. */
+export function statusLabel(status: ItemStatus, origin?: LibraryItem['origin']): string {
+	return status === 'complete' && origin === 'import' ? 'Imported' : STATUS[status];
 }

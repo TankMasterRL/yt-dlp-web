@@ -15,12 +15,17 @@
  * ~2.5 MiB: it only copies streams); `0`, none — for hosts that cap file sizes
  * below ffmpeg.wasm's (Workers Static Assets: 25 MiB) unless the remux core is
  * built, or to ship no FFmpeg at all. The app then offers no merging.
+ *
+ * A build without a relay (VITE_RELAY_URL=none) ships none of these: it fetches
+ * nothing, so it never runs yt-dlp and has nothing to merge. Its library holds
+ * what is imported from the device, played and animated by the browser itself.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WHEELS } from '../src/lib/engine/wheels.ts';
+import { NO_RELAY } from '../src/lib/relay/protocol.ts';
 import { FFMPEG_CORE_JS, FFMPEG_CORE_WASM, FFMPEG_DIR } from '../src/lib/remux/assets.ts';
 import { CORE_FILES, FFMPEG_DIST_DIR, readBuildInfo, type BuildInfo } from './build-ffmpeg.ts';
 
@@ -37,6 +42,11 @@ export const PYODIDE_RUNTIME_FILES = [
 ] as const;
 
 export const FFMPEG_CORE_FILES = [FFMPEG_CORE_JS, FFMPEG_CORE_WASM] as const;
+
+/** Whether the build ships the engine (Pyodide, the wheels) and FFmpeg: all but one without a relay. */
+export function shipsEngine(env: Record<string, string | undefined> = process.env): boolean {
+	return env.VITE_RELAY_URL !== NO_RELAY;
+}
 
 /**
  * Shipped next to the core: ffmpeg.wasm is GPL-2.0-or-later, so whoever serves
@@ -161,28 +171,37 @@ export async function copyAll(files: readonly string[], from: string, to: string
 }
 
 if (import.meta.main) {
-	await copyAll(
-		PYODIDE_RUNTIME_FILES,
-		join(root, 'node_modules', 'pyodide'),
-		join(root, 'static', 'pyodide')
-	);
-	await copyAll(
-		WHEELS.map((w) => w.file),
-		join(root, '.wheel-cache'),
-		join(root, 'static', 'wheels')
-	);
-	console.log(
-		`✓ synced ${PYODIDE_RUNTIME_FILES.length} Pyodide files and ${WHEELS.length} wheels into static/`
-	);
-
-	const ffmpegTarget = join(root, 'static', FFMPEG_DIR);
-	await rm(ffmpegTarget, { recursive: true, force: true });
-	const ffmpeg = ffmpegAssets(ffmpegChoice(process.env.YT_DLP_WEB_FFMPEG));
-	if (!ffmpeg) {
-		console.log('– left FFmpeg out (YT_DLP_WEB_FFMPEG=0): this build cannot merge video and audio');
+	const targets = {
+		pyodide: join(root, 'static', 'pyodide'),
+		wheels: join(root, 'static', 'wheels'),
+		ffmpeg: join(root, 'static', FFMPEG_DIR)
+	};
+	if (!shipsEngine()) {
+		for (const target of Object.values(targets)) await rm(target, { recursive: true, force: true });
+		console.log(
+			'– left Pyodide, the wheels and FFmpeg out (VITE_RELAY_URL=none): this build fetches nothing'
+		);
 	} else {
-		await copyAll(ffmpeg.files, ffmpeg.from, ffmpegTarget);
-		await writeFile(join(ffmpegTarget, 'NOTICE.txt'), ffmpeg.notice);
-		console.log(`✓ synced ${ffmpeg.label} into static/${FFMPEG_DIR}`);
+		await copyAll(PYODIDE_RUNTIME_FILES, join(root, 'node_modules', 'pyodide'), targets.pyodide);
+		await copyAll(
+			WHEELS.map((w) => w.file),
+			join(root, '.wheel-cache'),
+			targets.wheels
+		);
+		console.log(
+			`✓ synced ${PYODIDE_RUNTIME_FILES.length} Pyodide files and ${WHEELS.length} wheels into static/`
+		);
+
+		await rm(targets.ffmpeg, { recursive: true, force: true });
+		const ffmpeg = ffmpegAssets(ffmpegChoice(process.env.YT_DLP_WEB_FFMPEG));
+		if (!ffmpeg) {
+			console.log(
+				'– left FFmpeg out (YT_DLP_WEB_FFMPEG=0): this build cannot merge video and audio'
+			);
+		} else {
+			await copyAll(ffmpeg.files, ffmpeg.from, targets.ffmpeg);
+			await writeFile(join(targets.ffmpeg, 'NOTICE.txt'), ffmpeg.notice);
+			console.log(`✓ synced ${ffmpeg.label} into static/${FFMPEG_DIR}`);
+		}
 	}
 }

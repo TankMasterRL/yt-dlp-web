@@ -129,16 +129,29 @@ export async function seek(
 	}
 }
 
-/** The video's size and length, waiting for its metadata if need be. */
-export async function videoMetadata(video: SeekableVideo): Promise<VideoMetadata> {
-	if (video.readyState < HAVE_METADATA) await until(video, 'loadedmetadata');
+/**
+ * The media's size (0 × 0 for sound only) and length, waiting for its
+ * metadata if need be; `signal` gives up on a file the browser never answers
+ * about.
+ */
+export async function mediaMetadata(
+	video: SeekableVideo,
+	signal?: AbortSignal
+): Promise<VideoMetadata> {
+	if (video.readyState < HAVE_METADATA) await until(video, 'loadedmetadata', signal);
 	if (!Number.isFinite(video.duration)) {
 		// Some files (live recordings, MediaRecorder's WebM) state no length: the
 		// browser learns it by seeking to the end.
-		await seek(video, Number.MAX_SAFE_INTEGER);
-		await seek(video, 0);
+		await seek(video, Number.MAX_SAFE_INTEGER, signal);
+		await seek(video, 0, signal);
 	}
 	const { videoWidth: width, videoHeight: height, duration } = video;
+	return { width, height, duration };
+}
+
+/** The video's size and length, waiting for its metadata if need be. */
+export async function videoMetadata(video: SeekableVideo): Promise<VideoMetadata> {
+	const { width, height, duration } = await mediaMetadata(video);
 	if (!width || !height) throw new Error('This file has no picture to make an animation from');
 	if (!Number.isFinite(duration) || duration <= 0)
 		throw new Error("Couldn't tell how long this video is");

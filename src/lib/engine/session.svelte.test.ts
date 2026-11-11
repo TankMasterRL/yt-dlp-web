@@ -51,14 +51,25 @@ describe('ExtractSession', () => {
 		expect(client.load).toHaveBeenCalledWith(LOAD);
 	});
 
-	it("records whether the deployment can solve YouTube's JS challenges", async () => {
+	it("records what the relay can do: solve YouTube's JS challenges, or only relay", async () => {
 		const { spawn } = fakeEngine({});
 		const session = new ExtractSession(spawn, LOAD);
-		expect(session.solverAvailable).toBeNull();
+		expect(session.relay).toBeNull();
 		const booting = session.boot();
-		spawn.mock.calls[0][0]({ kind: 'capabilities', solver: false });
+		spawn.mock.calls[0][0]({ kind: 'capabilities', relay: 'relays' });
 		await booting;
-		expect(session.solverAvailable).toBe(false);
+		expect(session.relay).toBe('relays');
+	});
+
+	it('records a relay that is not answering: a Worker switched off, or not admitting this site', async () => {
+		const { spawn } = fakeEngine({});
+		const session = new ExtractSession(spawn, LOAD);
+		const booting = session.boot();
+		spawn.mock.calls[0][0]({ kind: 'capabilities', relay: 'unreachable' });
+		await booting;
+		expect(session.relay).toBe('unreachable');
+		// The engine still starts: the Worker may come back, and a fetch then says why it failed.
+		expect(session.engineState).toBe('ready');
 	});
 
 	it('surfaces a failed boot instead of hanging', async () => {
