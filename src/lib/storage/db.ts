@@ -1,11 +1,12 @@
 /**
  * Library metadata in IndexedDB. The media bytes live in OPFS (one file per
- * item, `fileName`); this store holds what the library shows and what a paused
+ * item, `fileName`) — downloaded through the relay, or imported from a file on
+ * this device; this store holds what the library shows and what a paused
  * download needs to resume.
  */
 import type { DownloadPlan, FormatKind } from '$lib/formats';
 
-export type ItemStatus = 'downloading' | 'merging' | 'paused' | 'complete' | 'failed';
+export type ItemStatus = 'downloading' | 'merging' | 'importing' | 'paused' | 'complete' | 'failed';
 
 /** One half of a merged download, stored as its own OPFS file until remuxed. */
 export interface MergePart {
@@ -15,16 +16,12 @@ export interface MergePart {
 	plan: DownloadPlan;
 }
 
-export interface LibraryItem {
+/** What every item has, however its bytes got here. */
+interface ItemBase {
 	id: string;
-	/** The page yt-dlp extracted from. */
-	sourceUrl: string;
-	videoId: string;
-	extractor: string;
 	title: string;
 	uploader?: string;
 	duration?: number;
-	formatId: string;
 	ext: string;
 	kind: FormatKind;
 	resolution: string;
@@ -36,13 +33,34 @@ export interface LibraryItem {
 	error?: string;
 	createdAt: number;
 	completedAt?: number;
-	/** Fetched through the relay, so no image host ever sees the viewer. */
+	/** Fetched through the relay (no image host ever sees the viewer), or taken from an imported video. */
 	thumbnail?: Blob;
+}
+
+/** Fetched by yt-dlp through the relay. Records from before imports existed have no `origin`. */
+export interface DownloadedItem extends ItemBase {
+	origin?: 'download';
+	/** The page yt-dlp extracted from. */
+	sourceUrl: string;
+	videoId: string;
+	extractor: string;
+	formatId: string;
 	/** What the download worker needs to (re)start. For merged items: the video part. */
 	plan: DownloadPlan;
 	/** Present when the item is two streams remuxed into one file. */
 	parts?: MergePart[];
 }
+
+/** A media file from this device, copied into the library: nothing was fetched. */
+export interface ImportedItem extends ItemBase {
+	origin: 'import';
+	/** The file's name on the device, as it was picked. */
+	originalName: string;
+	formatId?: never;
+	parts?: never;
+}
+
+export type LibraryItem = DownloadedItem | ImportedItem;
 
 export interface LibraryDb {
 	all(): Promise<LibraryItem[]>;

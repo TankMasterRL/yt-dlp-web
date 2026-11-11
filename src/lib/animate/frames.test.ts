@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { seek, videoFrames, videoMetadata, type FrameCanvas, type SeekableVideo } from './frames';
+import {
+	mediaMetadata,
+	seek,
+	videoFrames,
+	videoMetadata,
+	type FrameCanvas,
+	type SeekableVideo
+} from './frames';
 
 /**
  * A media element that seeks (asynchronously, like a real one) and can fail.
@@ -175,5 +182,30 @@ describe('videoMetadata', () => {
 		const video = new FakeVideo();
 		video.videoWidth = 0;
 		await expect(videoMetadata(video)).rejects.toThrow(/no picture/);
+	});
+});
+
+describe('mediaMetadata', () => {
+	it('reads sound without a picture as 0 × 0', async () => {
+		const video = new FakeVideo();
+		video.videoWidth = video.videoHeight = 0;
+		expect(await mediaMetadata(video)).toEqual({ width: 0, height: 0, duration: 2 });
+	});
+
+	it('fails as the browser does for a file it cannot play', async () => {
+		const video = new FakeVideo();
+		video.readyState = 0;
+		const metadata = mediaMetadata(video);
+		video.fail(4);
+		await expect(metadata).rejects.toThrow("This browser can't play this video's format");
+	});
+
+	it('gives up when told to, for a file the browser never answers about', async () => {
+		const video = new FakeVideo();
+		video.readyState = 0;
+		const controller = new AbortController();
+		const metadata = mediaMetadata(video, controller.signal);
+		controller.abort(new DOMException('signal timed out', 'TimeoutError'));
+		await expect(metadata).rejects.toMatchObject({ name: 'TimeoutError' });
 	});
 });

@@ -3,6 +3,7 @@ import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
 import { bestMergePair } from '$lib/formats';
 import type { DownloadProgress } from '$lib/download/download';
 import type { LibraryDb, LibraryItem } from './db';
+import type { MediaFacts } from './imported';
 import { Library, type Downloader, type LibraryDeps, type Remuxer } from './library.svelte';
 
 function memoryDb(initial: LibraryItem[] = []): LibraryDb {
@@ -33,6 +34,16 @@ function controllableDownloader() {
 		report(id: string, p: DownloadProgress): void;
 	} = {
 		start: vi.fn(
+			(request, onProgress) =>
+				new Promise<{ bytesTotal: number }>((resolve, reject) => {
+					running.set(request.itemId, {
+						resolve: (bytesTotal) => resolve({ bytesTotal }),
+						reject,
+						progress: onProgress
+					});
+				})
+		),
+		importFile: vi.fn(
 			(request, onProgress) =>
 				new Promise<{ bytesTotal: number }>((resolve, reject) => {
 					running.set(request.itemId, {
@@ -82,6 +93,12 @@ function setup(overrides: Partial<LibraryDeps> = {}) {
 		},
 		activeDownloads: async () => new Set(),
 		fetchThumbnail: vi.fn(async () => new Blob(['jpg'], { type: 'image/jpeg' })),
+		inspect: vi.fn(async (): Promise<MediaFacts> => ({
+			duration: 2,
+			width: 640,
+			height: 360,
+			thumbnail: new Blob(['still'], { type: 'image/jpeg' })
+		})),
 		now: () => 1000 + n,
 		newId: () => `id${++n}`,
 		...overrides
@@ -247,6 +264,126 @@ describe('Library', () => {
 		listeners.forEach((l) => l(new MessageEvent('message', { data: 'changed' })));
 		await flush();
 		expect(library.items.map((i) => i.title)).toEqual(['From another tab']);
+	});
+});
+
+describe('imports from this device', () => {
+	const picked = () => new File([new Uint8Array(4096)], 'Holiday clip.mp4', { type: 'video/mp4' });
+	/** As in IndexedDB: an import some tab started. */
+	const stored = (id: string, createdAt: number): LibraryItem => ({
+		id,
+		origin: 'import',
+		title: 't',
+		originalName: 't.mp4',
+		ext: 'mp4',
+		kind: 'av',
+		resolution: '360p',
+		fileName: `${id}.mp4`,
+		bytesTotal: 10,
+		bytesDone: 0,
+		status: 'importing',
+		createdAt
+	});
+
+	it('copies the file into storage under the new item, which is complete once it is all there', async () => {
+		const { library, deps, downloader } = setup();
+		const file = picked();
+		const item = await library.importFile(file);
+		expect(deps.inspect).toHaveBeenCalledWith(file);
+		expect(item).toMatchObject({
+			origin: 'import',
+			title: 'Holiday clip',
+			ext: 'mp4',
+			kind: 'av',
+			resolution: '360p',
+			duration: 2,
+			fileName: 'id1.mp4',
+			bytesTotal: 4096,
+			status: 'importing'
+		});
+		expect(item.thumbnail).toBeInstanceOf(Blob);
+		expect(downloader.importFile).toHaveBeenCalledWith(
+			{ itemId: 'id1', fileName: 'id1.mp4', file },
+			expect.any(Function)
+		);
+
+		downloader.report('id1', { bytesDone: 1024, bytesTotal: 4096 });
+		expect(library.live.id1).toEqual({ bytesDone: 1024, bytesTotal: 4096 });
+
+		downloader.finish('id1', 4096);
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'complete', bytesDone: 4096 });
+		expect(library.items[0].completedAt).toBeDefined();
+		expect(await deps.db.get('id1')).toMatchObject({ status: 'complete', origin: 'import' });
+		// Nothing was fetched: no relay is asked for anything.
+		expect(downloader.start).not.toHaveBeenCalled();
+		expect(deps.fetchThumbnail).not.toHaveBeenCalled();
+	});
+
+	it('refuses a file the browser cannot play, and adds nothing', async () => {
+		const { library, deps, downloader } = setup({
+			inspect: async () => {
+				throw new Error("This browser can't play this video's format");
+			}
+		});
+		await expect(library.importFile(picked())).rejects.toThrow(/can't play/);
+		expect(library.items).toEqual([]);
+		expect(await deps.db.all()).toEqual([]);
+		expect(downloader.importFile).not.toHaveBeenCalled();
+	});
+
+	it('records a failed copy with its reason, and never offers to resume it: the file was only lent', async () => {
+		const { library, downloader } = setup();
+		await library.importFile(picked());
+		downloader.fail('id1', new DOMException('The quota has been exceeded', 'QuotaExceededError'));
+		await flush();
+		expect(library.items[0]).toMatchObject({
+			status: 'failed',
+			error: expect.stringMatching(/quota/)
+		});
+
+		await library.resume('id1');
+		expect(library.items[0].status).toBe('failed');
+		expect(downloader.start).not.toHaveBeenCalled();
+		expect(downloader.importFile).toHaveBeenCalledTimes(1);
+	});
+
+	it('calls a stopped import failed, never paused', async () => {
+		const { library, downloader } = setup();
+		await library.importFile(picked());
+		await downloader.cancel('id1');
+		await flush();
+		expect(library.items[0]).toMatchObject({
+			status: 'failed',
+			error: expect.stringMatching(/stopped/)
+		});
+	});
+
+	it('on load, marks an import a closed tab interrupted as failed — but not one another tab runs', async () => {
+		const db = memoryDb([stored('orphan', 1), stored('elsewhere', 2)]);
+		const { library } = setup({ db, activeDownloads: async () => new Set(['elsewhere']) });
+		await library.load();
+		expect(library.items.find((i) => i.id === 'orphan')).toMatchObject({
+			status: 'failed',
+			error: expect.stringMatching(/interrupted.*import the file again/i)
+		});
+		expect(library.items.find((i) => i.id === 'elsewhere')?.status).toBe('importing');
+		expect((await db.get('orphan'))?.status).toBe('failed');
+	});
+
+	it('removing an import in progress stops the copy and deletes what was copied', async () => {
+		const { library, deps, downloader } = setup();
+		await library.importFile(picked());
+		await library.remove('id1');
+		expect(downloader.cancel).toHaveBeenCalledWith('id1');
+		expect(deps.files.remove).toHaveBeenCalledWith('id1.mp4');
+		expect(library.items).toEqual([]);
+		expect(await deps.db.all()).toEqual([]);
+	});
+
+	it('refuses to import where nothing can inspect a file', async () => {
+		const { library } = setup({ inspect: undefined });
+		await expect(library.importFile(picked())).rejects.toThrow(/importing is not available/i);
 	});
 });
 

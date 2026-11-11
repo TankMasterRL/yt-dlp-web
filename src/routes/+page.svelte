@@ -21,11 +21,15 @@
 
 	// Resolved here, in browser-only code: workers get absolute URLs in `load`.
 	const endpoints = appEndpoints();
-	const session = new ExtractSession(spawnEngine, {
-		assetsBase: endpoints.assetsBase,
-		relayEndpoint: endpoints.relay,
-		solveEndpoint: endpoints.solve
-	});
+	/** Null in a build without a relay (VITE_RELAY_URL=none): then no engine ever starts. */
+	const session = endpoints.relay
+		? new ExtractSession(spawnEngine, {
+				assetsBase: endpoints.assetsBase,
+				relayEndpoint: endpoints.relay.relay,
+				solveEndpoint: endpoints.relay.solve
+			})
+		: null;
+	const relayHost = endpoints.relay ? new URL(endpoints.relay.relay).host : null;
 	const library = getLibrary(endpoints);
 	/** Whether this deployment ships an FFmpeg core; null until asked. */
 	let canMerge = $state<boolean | null>(null);
@@ -43,18 +47,19 @@
 	);
 
 	async function download(format: FormatInfo) {
-		if (!session.result?.ok) return;
+		if (!session?.result?.ok) return;
 		const item = await library.add(session.result.info, format);
 		started = [item.id, ...started];
 	}
 
 	async function downloadMerged() {
-		if (!session.result?.ok || !merge) return;
+		if (!session?.result?.ok || !merge) return;
 		const item = await library.addMerged(session.result.info, merge);
 		started = [item.id, ...started];
 	}
 
 	onMount(() => {
+		if (!session) return;
 		session.boot().catch(() => {});
 		void library.mergeAvailable().then((available) => (canMerge = available));
 		void opfsAvailable().then((available) => (canStore = available));
@@ -70,7 +75,7 @@
 		ready: `yt-dlp ${ytdlp.version} ready`
 	};
 
-	const video = $derived(session.result?.ok ? primaryVideo(session.result.info) : null);
+	const video = $derived(session?.result?.ok ? primaryVideo(session.result.info) : null);
 	/** yt-dlp's bv*+ba: the best separate video and audio streams, to merge here. */
 	const merge = $derived(video?.formats ? bestMergePair(video.formats) : null);
 	const mergeSize = $derived.by(() => {
@@ -82,16 +87,18 @@
 		};
 	});
 	const engineStatus = $derived(
-		session.engineState === 'failed'
-			? `The engine failed to start: ${session.engineError}`
-			: session.bootStage
-				? STAGE[session.bootStage]
-				: 'Waiting to start…'
+		!session
+			? ''
+			: session.engineState === 'failed'
+				? `The engine failed to start: ${session.engineError}`
+				: session.bootStage
+					? STAGE[session.bootStage]
+					: 'Waiting to start…'
 	);
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
-		void session.extract(input);
+		void session?.extract(input);
 	}
 </script>
 
@@ -100,143 +107,164 @@
 </svelte:head>
 
 <h1>Download</h1>
-<p class="lede">
-	yt-dlp runs right here, in your browser. Only raw bytes pass through the relay; everything you
-	download stays in this browser's private storage.
-</p>
-
-<form onsubmit={submit} aria-describedby="engine-status">
-	<label for="url">Video URL</label>
-	<div class="row">
-		<input
-			id="url"
-			name="url"
-			type="text"
-			inputmode="url"
-			autocomplete="off"
-			spellcheck="false"
-			placeholder="https://www.youtube.com/watch?v=…"
-			bind:value={input}
-			aria-invalid={session.inputError ? 'true' : undefined}
-			aria-describedby={session.inputError ? 'url-error' : undefined}
-		/>
-		<button
-			class="primary"
-			type="submit"
-			disabled={session.busy || session.engineState === 'failed'}
-		>
-			{session.busy ? 'Fetching…' : 'Fetch formats'}
-		</button>
-	</div>
-	{#if session.inputError}<p id="url-error" class="error">{session.inputError}</p>{/if}
-</form>
-
-<p
-	id="engine-status"
-	class="status"
-	class:failed={session.engineState === 'failed'}
-	role="status"
-	data-engine-state={session.engineState}
->
-	{engineStatus}
-</p>
-{#if canStore === false}
-	<p class="status note" data-storage="unavailable">
-		This browser gives the page no private file storage here — private windows often don't — so
-		downloads can't be kept. You can still look up formats.
-	</p>
-{/if}
-{#if session.solverAvailable === false}
-	<p class="status note" data-solver="unavailable">
-		This relay cannot solve YouTube's JavaScript challenges (it needs a Worker Loader binding), so
-		yt-dlp uses YouTube clients that don't need them — some formats may be missing.
-	</p>
-{/if}
-
-{#if session.log.length}
-	<details class="log" open={session.busy}>
-		<summary>yt-dlp log ({session.log.length})</summary>
-		<ol aria-label="yt-dlp log">
-			{#each session.log as entry, i (i)}
-				<li class={entry.level}>{entry.line}</li>
-			{/each}
-		</ol>
-	</details>
-{/if}
-
-{#if session.result && !session.result.ok}
-	<p class="error" role="alert">{session.result.error}</p>
-{:else if video}
-	<article class="video" aria-labelledby="video-title">
-		<header>
-			<h2 id="video-title">{video.title}</h2>
-			<p class="meta">
-				{#if video.uploader}<span>{video.uploader}</span>{/if}
-				{#if video.duration}<span>{formatDuration(video.duration)}</span>{/if}
-				{#if video.extractor_key}<span>via {video.extractor_key}</span>{/if}
-			</p>
-		</header>
-		{#if merge}
-			<section class="best" aria-labelledby="best-title">
-				<div>
-					<h3 id="best-title">Best quality · {resolutionLabel(merge.video)}</h3>
-					<p>
-						{codecName(merge.video.vcodec) ?? 'Video'} video + {codecName(merge.audio.acodec) ??
-							'audio'} audio, merged into one {merge.container.toUpperCase()} file right here — copied,
-						never re-encoded{#if mergeSize}{' '}({mergeSize.approx ? '≈ ' : ''}{formatBytes(
-								mergeSize.bytes
-							)}){/if}.
-					</p>
-				</div>
-				{#if canStore === false}
-					<!-- Nothing can be kept here; the storage note above says why. -->
-				{:else if canMerge}
-					<button class="primary" type="button" onclick={downloadMerged}
-						>Download best quality</button
-					>
-					<p class="license">
-						Merging uses <a href={asset('/ffmpeg/NOTICE.txt')}>{ffmpeg.name}</a> ({ffmpeg.license}),
-						loaded only when you merge.
-					</p>
-				{:else if canMerge === false}
-					<p class="note" data-merge="unavailable">
-						This deployment doesn't include ffmpeg.wasm, so separate video and audio can't be merged
-						here. Pick a format with both below, or download each stream on its own.
-					</p>
-				{/if}
-			</section>
-		{/if}
-		{#if video.formats?.length}
-			<FormatTable
-				formats={video.formats}
-				recommended={video.format_id}
-				onDownload={download}
-				disabled={canStore === false}
-			/>
-		{:else}
-			<p>No downloadable formats were found.</p>
-		{/if}
-	</article>
-{/if}
-
-{#if startedItems.length}
-	<section class="started" aria-label="Downloads started here">
-		<h2>Downloads</h2>
-		<ul>
-			{#each startedItems as item (item.id)}
-				{@const live = library.live[item.id]}
-				<li data-status={item.status}>
-					<span class="name">{item.title} <code>[{item.formatId}]</code></span>
-					<span class="state">
-						{statusLabel(item.status)}{#if live && item.status === 'downloading'}
-							· {progressLabel(live)}{:else if item.status === 'failed'}
-							· {item.error}{/if}
-					</span>
-				</li>
-			{/each}
-		</ul>
-		<p><a href={resolve('/library/')}>Open the library</a> to play, save or manage downloads.</p>
+{#if !session}
+	<section class="no-relay" data-relay="none" aria-labelledby="no-relay-title">
+		<h2 id="no-relay-title">This site has no relay</h2>
+		<p>
+			It runs without the relay Worker, so it can't fetch videos from YouTube or other sites: a web
+			page may not read them itself.
+		</p>
+		<p>
+			Everything else works, right here in your browser: <a href={resolve('/library/')}
+				>import videos you already have</a
+			> into the library, play them, and make animated images from them. Nothing is uploaded anywhere.
+		</p>
 	</section>
+{:else}
+	<p class="lede">
+		yt-dlp runs right here, in your browser. Only raw bytes pass through the relay; everything you
+		download stays in this browser's private storage.
+	</p>
+
+	<form onsubmit={submit} aria-describedby="engine-status">
+		<label for="url">Video URL</label>
+		<div class="row">
+			<input
+				id="url"
+				name="url"
+				type="text"
+				inputmode="url"
+				autocomplete="off"
+				spellcheck="false"
+				placeholder="https://www.youtube.com/watch?v=…"
+				bind:value={input}
+				aria-invalid={session.inputError ? 'true' : undefined}
+				aria-describedby={session.inputError ? 'url-error' : undefined}
+			/>
+			<button
+				class="primary"
+				type="submit"
+				disabled={session.busy || session.engineState === 'failed'}
+			>
+				{session.busy ? 'Fetching…' : 'Fetch formats'}
+			</button>
+		</div>
+		{#if session.inputError}<p id="url-error" class="error">{session.inputError}</p>{/if}
+	</form>
+
+	<p
+		id="engine-status"
+		class="status"
+		class:failed={session.engineState === 'failed'}
+		role="status"
+		data-engine-state={session.engineState}
+	>
+		{engineStatus}
+	</p>
+	{#if canStore === false}
+		<p class="status note" data-storage="unavailable">
+			This browser gives the page no private file storage here — private windows often don't — so
+			downloads can't be kept. You can still look up formats.
+		</p>
+	{/if}
+	{#if session.relay === 'unreachable'}
+		<p class="status note" data-relay="unreachable">
+			The relay at {relayHost} isn't answering this page, so nothing can be fetched right now: its Worker
+			may be switched off, or not admit this site (ALLOWED_ORIGINS). Videos you already have can still
+			be <a href={resolve('/library/')}>imported into the library</a> and animated.
+		</p>
+	{:else if session.relay === 'relays'}
+		<p class="status note" data-solver="unavailable">
+			This relay cannot solve YouTube's JavaScript challenges (it needs a Worker Loader binding), so
+			yt-dlp uses YouTube clients that don't need them — some formats may be missing.
+		</p>
+	{/if}
+
+	{#if session.log.length}
+		<details class="log" open={session.busy}>
+			<summary>yt-dlp log ({session.log.length})</summary>
+			<ol aria-label="yt-dlp log">
+				{#each session.log as entry, i (i)}
+					<li class={entry.level}>{entry.line}</li>
+				{/each}
+			</ol>
+		</details>
+	{/if}
+
+	{#if session.result && !session.result.ok}
+		<p class="error" role="alert">{session.result.error}</p>
+	{:else if video}
+		<article class="video" aria-labelledby="video-title">
+			<header>
+				<h2 id="video-title">{video.title}</h2>
+				<p class="meta">
+					{#if video.uploader}<span>{video.uploader}</span>{/if}
+					{#if video.duration}<span>{formatDuration(video.duration)}</span>{/if}
+					{#if video.extractor_key}<span>via {video.extractor_key}</span>{/if}
+				</p>
+			</header>
+			{#if merge}
+				<section class="best" aria-labelledby="best-title">
+					<div>
+						<h3 id="best-title">Best quality · {resolutionLabel(merge.video)}</h3>
+						<p>
+							{codecName(merge.video.vcodec) ?? 'Video'} video + {codecName(merge.audio.acodec) ??
+								'audio'} audio, merged into one {merge.container.toUpperCase()} file right here — copied,
+							never re-encoded{#if mergeSize}{' '}({mergeSize.approx ? '≈ ' : ''}{formatBytes(
+									mergeSize.bytes
+								)}){/if}.
+						</p>
+					</div>
+					{#if canStore === false}
+						<!-- Nothing can be kept here; the storage note above says why. -->
+					{:else if canMerge}
+						<button class="primary" type="button" onclick={downloadMerged}
+							>Download best quality</button
+						>
+						<p class="license">
+							Merging uses <a href={asset('/ffmpeg/NOTICE.txt')}>{ffmpeg.name}</a>
+							({ffmpeg.license}), loaded only when you merge.
+						</p>
+					{:else if canMerge === false}
+						<p class="note" data-merge="unavailable">
+							This deployment doesn't include ffmpeg.wasm, so separate video and audio can't be
+							merged here. Pick a format with both below, or download each stream on its own.
+						</p>
+					{/if}
+				</section>
+			{/if}
+			{#if video.formats?.length}
+				<FormatTable
+					formats={video.formats}
+					recommended={video.format_id}
+					onDownload={download}
+					disabled={canStore === false}
+				/>
+			{:else}
+				<p>No downloadable formats were found.</p>
+			{/if}
+		</article>
+	{/if}
+
+	{#if startedItems.length}
+		<section class="started" aria-label="Downloads started here">
+			<h2>Downloads</h2>
+			<ul>
+				{#each startedItems as item (item.id)}
+					{@const live = library.live[item.id]}
+					<li data-status={item.status}>
+						<span class="name">{item.title} <code>[{item.formatId}]</code></span>
+						<span class="state">
+							{statusLabel(item.status)}{#if live && item.status === 'downloading'}
+								· {progressLabel(live)}{:else if item.status === 'failed'}
+								· {item.error}{/if}
+						</span>
+					</li>
+				{/each}
+			</ul>
+			<p><a href={resolve('/library/')}>Open the library</a> to play, save or manage downloads.</p>
+		</section>
+	{/if}
 {/if}
 
 <style>
@@ -248,6 +276,24 @@
 		color: var(--muted);
 		margin-top: 0;
 		max-width: 46rem;
+	}
+
+	.no-relay {
+		max-width: 46rem;
+		margin-top: 1rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+	}
+
+	.no-relay h2 {
+		font-size: 1rem;
+		margin: 0;
+	}
+
+	.no-relay p {
+		margin: 0.5rem 0 0;
 	}
 
 	form {

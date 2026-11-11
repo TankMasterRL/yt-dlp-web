@@ -66,3 +66,20 @@ test.describe('extraction in a real browser worker', () => {
 		);
 	});
 });
+
+test('a relay that does not answer this page is named, and the library is pointed to', async ({
+	page
+}) => {
+	test.setTimeout(ENGINE_BOOT_MS);
+	// The same app from an origin the fixture relay does not admit (it admits
+	// http://localhost:4173): to this page, the relay is as good as switched off.
+	await page.goto('http://127.0.0.1:4173/');
+	const note = page.locator('[data-relay="unreachable"]');
+	await expect(note).toContainText("The relay at localhost:4174 isn't answering this page", {
+		timeout: ENGINE_BOOT_MS
+	});
+	// Not mistaken for a relay without a Worker Loader.
+	await expect(page.locator('[data-solver="unavailable"]')).toHaveCount(0);
+	await note.getByRole('link', { name: 'imported into the library' }).click();
+	await expect(page.getByRole('button', { name: 'Import videos…' })).toBeVisible();
+});

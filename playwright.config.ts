@@ -72,7 +72,9 @@ export default defineConfig({
 		{
 			command: 'bun run build && bun run preview --port 4173 --strictPort',
 			port: 4173,
-			env: { VITE_RELAY_URL: 'http://localhost:4174' },
+			// The fixture relay — or, with VITE_RELAY_URL=none, a build without one
+			// (tests/e2e/no-relay.test.ts, the gate's last run).
+			env: { VITE_RELAY_URL: process.env.VITE_RELAY_URL ?? 'http://localhost:4174' },
 			reuseExistingServer: !process.env.CI,
 			timeout: 180_000
 		}

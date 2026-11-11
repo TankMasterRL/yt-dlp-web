@@ -35,7 +35,8 @@ bootstrap script (`kit.csp` hash mode), and the directives come from `csp.config
 - `require-trusted-types-for 'script'`, with two policies: Svelte's `svelte-trusted-html` and the
   app's `yt-dlp-web-worker-url` (same-origin http(s) script URLs only).
 - `connect-src 'self' <relay origin>`. The relay origin is fixed at build time (`VITE_RELAY_URL`) and
-  is the only other origin the page can reach.
+  is the only other origin the page can reach. A build without a relay (`VITE_RELAY_URL=none`) has
+  `connect-src 'self'` alone: it can reach no other origin at all.
 - `img-src 'self' blob: data:` and `media-src 'self' blob:`. Thumbnails and media come through the
   relay and are shown from `blob:` URLs, so no third-party image or video host ever sees the viewer.
 - `object-src`, `base-uri`, `form-action` and `frame-src` are all `'none'`.
@@ -167,3 +168,10 @@ Downloads live in the origin's private file system (OPFS) and their metadata in 
 browser keeps them per origin, and anything running on that origin can read them. Clearing the
 site's data deletes the library. The app asks for persistent storage only when the person asks
 it to keep their downloads.
+
+Videos imported from the device are copied into the same storage, and nowhere else: a picked file
+is read by the page and the download worker only, opened in a media element from a `blob:` URL,
+and never sent anywhere — no request is made for it, not even to the relay (e2e checks that the
+relay sees none). Its thumbnail is a still the browser draws itself. A video opened with _Animate
+a video file…_ is not even copied: it is read from disk for as long as the animation maker is
+open.

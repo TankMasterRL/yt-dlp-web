@@ -26,9 +26,21 @@ export function basePathFromEnv(env = process.env) {
 	return raw ? `/${raw.replace(/^\/+|\/+$/g, '')}` : '';
 }
 
-/** The relay Worker's origin from VITE_RELAY_URL, or null for same-origin (all-in-one). */
+/**
+ * VITE_RELAY_URL for a build without a relay (NO_RELAY in src/lib/relay/protocol.ts;
+ * csp.config.test.ts holds the two together).
+ */
+const NO_RELAY = 'none';
+
+/**
+ * The relay Worker's origin from VITE_RELAY_URL, or null: for same-origin
+ * (all-in-one, unset) and for a build without a relay (`none`) alike, the
+ * page connects to its own origin only.
+ * @param {Record<string, string | undefined>} env
+ */
 export function relayOriginFromEnv(env = process.env) {
-	return env.VITE_RELAY_URL ? new URL(env.VITE_RELAY_URL).origin : null;
+	const url = env.VITE_RELAY_URL;
+	return url && url !== NO_RELAY ? new URL(url).origin : null;
 }
 
 /**

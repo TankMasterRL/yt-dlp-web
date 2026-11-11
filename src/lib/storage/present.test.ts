@@ -23,6 +23,11 @@ describe('exportFileName', () => {
 		expect(exportFileName({ title: '', formatId: '1', ext: 'mp4' })).toBe('video [1].mp4');
 	});
 
+	it('names an imported file "<title>.<ext>": it has no format', () => {
+		expect(exportFileName({ title: 'Holiday clip', ext: 'mp4' })).toBe('Holiday clip.mp4');
+		expect(exportFileName({ title: 'a:b', ext: 'mkv' })).toBe('a_b.mkv');
+	});
+
 	it('keeps names to a sane length', () => {
 		expect(
 			exportFileName({ title: 'x'.repeat(500), formatId: '1', ext: 'mp4' }).length
@@ -43,5 +48,10 @@ describe('progress', () => {
 		expect(statusLabel('complete')).toBe('Downloaded');
 		expect(statusLabel('paused')).toBe('Paused');
 		expect(statusLabel('merging')).toBe('Merging');
+		expect(statusLabel('importing')).toBe('Importing');
+		// A file from this device was imported, not downloaded.
+		expect(statusLabel('complete', 'import')).toBe('Imported');
+		expect(statusLabel('complete', 'download')).toBe('Downloaded');
+		expect(statusLabel('failed', 'import')).toBe('Failed');
 	});
 });

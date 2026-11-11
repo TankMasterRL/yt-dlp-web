@@ -4,7 +4,8 @@
 # hash-verified at image build time; no wheels live in the repo — real
 # ffmpeg.wasm, the real remux core and real workerd), and the Playwright e2e
 # suite on Chromium, Firefox and WebKit, whose merge journey runs a second
-# time with the remux core.
+# time with the remux core, and whose no-relay journey runs on a build
+# without a relay (VITE_RELAY_URL=none).
 
 # The remux core (`bun run build:ffmpeg`): FFmpeg compiled to WebAssembly in
 # the image of the Emscripten release scripts/build-ffmpeg.ts pins, so the
@@ -46,6 +47,6 @@ ENV E2E_BROWSERS=chromium,firefox,webkit
 # The e2e webServer builds the app and serves it on :4173 internally, so this
 # needs no network beyond what the tests stub. Run with --ipc=host: Chromium can
 # exhaust a container's default /dev/shm. Playwright empties its output
-# directory when it starts, so the second run writes to its own: the first
-# run's traces of failed attempts survive for CI to upload.
-CMD ["bash", "-c", "bun run format:check && bun run audit && bun run check && bun run test && bun run test:e2e && YT_DLP_WEB_FFMPEG=remux bun run test:e2e tests/e2e/merge.test.ts --output test-results/remux"]
+# directory when it starts, so each later run writes to its own: the earlier
+# runs' traces of failed attempts survive for CI to upload.
+CMD ["bash", "-c", "bun run format:check && bun run audit && bun run check && bun run test && bun run test:e2e && YT_DLP_WEB_FFMPEG=remux bun run test:e2e tests/e2e/merge.test.ts --output test-results/remux && VITE_RELAY_URL=none bun run test:e2e tests/e2e/no-relay.test.ts --output test-results/no-relay"]

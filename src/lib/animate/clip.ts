@@ -5,7 +5,6 @@
  * Pure, so the editor, the crop handles and the time slider share one set of
  * rules.
  */
-import type { LibraryItem } from '$lib/storage/db';
 import { exportFileName } from '$lib/storage/present';
 import { FORMATS, type AnimationFormat } from './formats';
 
@@ -164,9 +163,12 @@ export function formatClipTime(seconds: number): string {
 	return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
-/** 'Title (0.5s-1.5s) [formatId].gif', the range kept even for the longest titles. */
+/**
+ * 'Title (0.5s-1.5s) [formatId].gif' ('Title (0.5s-1.5s).gif' for a video from
+ * this device), the range kept even for the longest titles.
+ */
 export function animationFileName(
-	item: Pick<LibraryItem, 'title' | 'formatId'>,
+	item: { title: string; formatId?: string },
 	{ start, end }: TimeRange,
 	format: AnimationFormat
 ): string {

@@ -8,6 +8,7 @@
  */
 import type { SyncTransport } from '$lib/engine/transport';
 import {
+	NO_RELAY,
 	RELAY_PATH,
 	RelayHeader,
 	SOLVE_PATH,
@@ -35,6 +36,17 @@ export function solveEndpoint(relayUrl: string | undefined): string {
 }
 
 /**
+ * The relay a build talks to, from VITE_RELAY_URL: unset, this origin's
+ * (all-in-one); a URL, that Worker's; NO_RELAY, none at all — null.
+ */
+export function relayEndpoints(
+	relayUrl: string | undefined
+): { relay: string; solve: string } | null {
+	if (relayUrl === NO_RELAY) return null;
+	return { relay: relayEndpoint(relayUrl), solve: solveEndpoint(relayUrl) };
+}
+
+/**
  * Synchronous solver for SandboxJCP: POST the program, return what it printed.
  * The X-Solve marker makes every cross-origin call preflight, so the Worker's
  * origin allowlist applies before it reads the program.
@@ -59,16 +71,25 @@ export function createSyncSolver(
 	};
 }
 
-/** Can this deployment solve? A GET answers 204 or 501; errors count as "no". */
-export async function probeSolver(
-	endpoint: string,
+/**
+ * What the relay can do: `solves` (GET /solve answers 204), `relays` only (501:
+ * no Worker Loader), or `unreachable` — anything else is not our Worker
+ * answering this page: switched off or never deployed (an error, or a static
+ * host's 404), or not admitting this origin (403, or no CORS).
+ */
+export type RelayProbe = 'solves' | 'relays' | 'unreachable';
+
+export async function probeRelay(
+	solveEndpoint: string,
 	fetchImpl: typeof fetch = fetch
-): Promise<boolean> {
+): Promise<RelayProbe> {
 	try {
-		const response = await fetchImpl(endpoint, { credentials: 'omit', cache: 'no-store' });
-		return response.status === 204;
+		const response = await fetchImpl(solveEndpoint, { credentials: 'omit', cache: 'no-store' });
+		if (response.status === 204) return 'solves';
+		if (response.status === 501) return 'relays';
+		return 'unreachable';
 	} catch {
-		return false;
+		return 'unreachable';
 	}
 }
 

@@ -1,9 +1,13 @@
 // @vitest-environment node
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
-import { openLibraryDb, type LibraryItem } from './db';
+import { openLibraryDb, type DownloadedItem } from './db';
 
-const item = (id: string, createdAt: number, extra: Partial<LibraryItem> = {}): LibraryItem => ({
+const item = (
+	id: string,
+	createdAt: number,
+	extra: Partial<DownloadedItem> = {}
+): DownloadedItem => ({
 	id,
 	sourceUrl: `https://example.test/${id}`,
 	videoId: id,

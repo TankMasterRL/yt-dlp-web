@@ -22,6 +22,13 @@ So a Cloudflare Worker does exactly those two jobs:
 
 It holds no secrets, stores nothing and parses nothing. Everything else happens in the browser.
 
+Only fetching needs it. A build without a relay (`VITE_RELAY_URL=none`) is still a library: it
+imports videos from the device, plays and saves them, and makes animated images of them. Its
+download page says the site has no relay, no engine starts, and the build ships no Pyodide, wheels
+or FFmpeg. A build with a relay asks it what it can do when the engine boots (`GET /solve`: 204
+solves, 501 only relays, anything else — an error, a static host's 404, a 403 for this origin —
+is no relay answering this page), and says so when it does not answer.
+
 ## The pieces
 
 ```
@@ -35,6 +42,8 @@ page (Svelte 5)                     src/routes/, src/lib/ui/
  └─ Library (runes)                 src/lib/storage/library.svelte.ts
      ├─ IndexedDB metadata          src/lib/storage/db.ts
      ├─ download worker ────────────▶ /relay   (ranged fetch → OPFS)   src/workers/download.worker.ts
+     │    imports: a picked File ───▶ OPFS                            src/lib/download/copy.ts
+     ├─ imported files, opened first in a <video>                     src/lib/storage/{inspect,imported}.ts
      ├─ remux worker (on demand)    FFmpeg → OPFS                     src/workers/remux.worker.ts
      └─ animations (library page)   <video> frames → animate worker   src/lib/animate/, src/workers/animate.worker.ts
 
@@ -111,6 +120,27 @@ A BroadcastChannel keeps every open tab's library in step. The library keeps its
 IndexedDB: title, format, size, status, and the thumbnail as a Blob fetched through the relay. It
 plays files from `blob:` URLs, saves them with `showSaveFilePicker()` (or a plain download), and
 shows how much storage is used.
+
+### Importing from the device
+
+_Import videos…_ takes files from a file dialog. Each one is first opened the way playback will
+open it, in a detached, muted `<video>` over a `blob:` URL (`inspect.ts`): a file the browser
+cannot play is refused before anything is stored. That also gives its length and size, and a still
+from a tenth of the way in (at most 10 s) drawn on a canvas, which becomes its thumbnail — so an
+imported item needs no relay for anything.
+
+The item (`origin: 'import'`, `imported.ts`) is named after the file. The download worker copies
+the bytes into OPFS under the item's Web Lock, like a download: the `File` is posted to the worker
+by reference and read a slice at a time (`copy.ts`), so even a large file never sits in memory.
+Exported again, it is the very file that was picked, under its own name (`<title>.<ext>`, no
+format tag).
+
+An import cannot be resumed: the picked file is only lent to the page. A failed copy stays
+_failed_ with its reason, and an import a closed tab interrupted becomes _failed_ when the library
+next loads; both can only be deleted.
+
+_Animate a video file…_ opens a file straight from disk in the animation maker instead. Nothing is
+copied or stored, so it works without private file storage too.
 
 ### Merging
 
@@ -202,6 +232,7 @@ In brief (see `SECURITY.md`):
 - `scripts/sync-assets.ts` copies the wheels, the Pyodide runtime files and an FFmpeg core with
   its license notice into `static/`: ffmpeg.wasm, the remux core with `YT_DLP_WEB_FFMPEG=remux`
   (after `bun run build:ffmpeg`), or none with `YT_DLP_WEB_FFMPEG=0`. None of these are committed.
+  A build without a relay (`VITE_RELAY_URL=none`) copies none of them, and fetches no wheels.
 - `scripts/write-headers.ts` writes `build/_headers` for the relay origin and base path that the
   build used.
 
@@ -215,5 +246,6 @@ In brief (see `SECURITY.md`):
 | The animation encoders                              | Vitest, each format read back by a decoder that is not the app's: strict readers written from each spec (`tests/helpers/`), ffmpeg.wasm's GIF, APNG and WebP decoders and its MP4/AVIF demuxer, and jxl-oxide (WebAssembly) for JPEG XL                                                                                                                              |
 | The `/solve` sandbox walls                          | real workerd, via Wrangler's test harness                                                                                                                                                                                                                                                                                                                            |
 | The whole app                                       | Playwright: the built app under the deploy's headers, the **real** relay handler (`scripts/fixture-relay.ts`) with a fake video site upstream, on Chromium, Firefox and WebKit. Animations made in the browser are checked frame by frame against ffmpeg.wasm's decoding of the clip, and decoded by the browser itself (Chromium's JPEG XL decoder enabled by flag) |
+| A build without a relay                             | Playwright again, on the app built with `VITE_RELAY_URL=none` (`tests/e2e/no-relay.test.ts`): it says so, ships no engine, connects nowhere else, and imports and animates videos from the device                                                                                                                                                                    |
 | BrowserOS                                           | the same e2e suite, `bun run test:browseros`                                                                                                                                                                                                                                                                                                                         |
 | Real YouTube                                        | `@live` tests against a deployed app, excluded by default                                                                                                                                                                                                                                                                                                            |

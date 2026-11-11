@@ -9,6 +9,7 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WHEELS, assertWheelIntegrity, sha256Hex } from '../src/lib/engine/wheels.ts';
+import { NO_RELAY } from '../src/lib/relay/protocol.ts';
 
 export const WHEEL_CACHE = join(import.meta.dir, '..', '.wheel-cache');
 
@@ -37,5 +38,8 @@ export async function fetchWheels(cacheDir = WHEEL_CACHE): Promise<void> {
 }
 
 if (import.meta.main) {
-	await fetchWheels();
+	// A build without a relay never runs yt-dlp, so ships no wheels (sync-assets.ts).
+	if (process.env.VITE_RELAY_URL === NO_RELAY)
+		console.log('– no wheels needed (VITE_RELAY_URL=none)');
+	else await fetchWheels();
 }

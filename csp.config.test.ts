@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
+import { NO_RELAY } from './src/lib/relay/protocol';
 import {
 	basePathFromEnv,
 	documentDirectives,
 	headersFor,
+	relayOriginFromEnv,
 	securityHeaderRules,
 	serializeCsp,
 	workerDirectives
@@ -24,6 +26,14 @@ describe('CSP', () => {
 			documentDirectives({ relayOrigin: 'https://relay.example.workers.dev', dev: false })
 		);
 		expect(csp).toContain("connect-src 'self' https://relay.example.workers.dev;");
+	});
+
+	it('takes the relay origin from VITE_RELAY_URL: none when it is this origin, or there is no relay', () => {
+		expect(relayOriginFromEnv({ VITE_RELAY_URL: 'https://relay.example.workers.dev/x' })).toBe(
+			'https://relay.example.workers.dev'
+		);
+		expect(relayOriginFromEnv({})).toBeNull();
+		expect(relayOriginFromEnv({ VITE_RELAY_URL: NO_RELAY })).toBeNull();
 	});
 
 	it('gives workers wasm but no Trusted Types policies', () => {

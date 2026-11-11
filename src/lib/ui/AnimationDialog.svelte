@@ -12,15 +12,15 @@
 	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '$lib/animate/formats';
 	import { videoFrames, videoMetadata } from '$lib/animate/frames';
 	import { formatBytes } from '$lib/formats';
-	import type { LibraryItem } from '$lib/storage/db';
 	import CropBox from './CropBox.svelte';
 	import RangeSlider from './RangeSlider.svelte';
 	import { saveFile } from './save';
 
 	interface Props {
-		/** The video, from the library's private storage. */
+		/** The video: from the library's private storage, or a file opened straight from disk. */
 		file: File;
-		item: Pick<LibraryItem, 'title' | 'formatId'>;
+		/** What the saved file is named after; a file from disk has no format. */
+		item: { title: string; formatId?: string };
 		onclose: () => void;
 	}
 
@@ -54,7 +54,7 @@
 		() => (asked = 'unknown')
 	);
 
-	// The video plays from a blob: URL over the OPFS file (CSP media-src blob:).
+	// The video plays from a blob: URL over the file (CSP media-src blob:).
 	$effect(() => {
 		const url = URL.createObjectURL(file);
 		video.src = url;

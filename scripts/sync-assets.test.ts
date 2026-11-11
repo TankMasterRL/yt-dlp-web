@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { NO_RELAY } from '../src/lib/relay/protocol';
 import { FFMPEG_CORE_JS, FFMPEG_CORE_WASM } from '../src/lib/remux/assets';
 import { BUILD_INFO_FILE, CORE_FILES, type BuildInfo } from './build-ffmpeg';
 import {
@@ -10,7 +11,8 @@ import {
 	ffmpegAssets,
 	ffmpegChoice,
 	ffmpegNotice,
-	remuxNotice
+	remuxNotice,
+	shipsEngine
 } from './sync-assets';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
@@ -129,5 +131,17 @@ describe('the remux core the build ships (YT_DLP_WEB_FFMPEG=remux)', () => {
 describe('YT_DLP_WEB_FFMPEG=0', () => {
 	it('ships no FFmpeg at all', () => {
 		expect(ffmpegAssets('none')).toBeNull();
+	});
+});
+
+describe('a build without a relay (VITE_RELAY_URL=none)', () => {
+	it('ships neither the engine nor FFmpeg: it fetches nothing, so it never runs yt-dlp or merges', () => {
+		expect(shipsEngine({ VITE_RELAY_URL: NO_RELAY })).toBe(false);
+		expect(shipsEngine({ VITE_RELAY_URL: NO_RELAY, YT_DLP_WEB_FFMPEG: 'remux' })).toBe(false);
+	});
+
+	it('is the only build that leaves them out', () => {
+		expect(shipsEngine({})).toBe(true);
+		expect(shipsEngine({ VITE_RELAY_URL: 'https://relay.example.workers.dev' })).toBe(true);
 	});
 });

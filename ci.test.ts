@@ -6,6 +6,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { NO_RELAY } from './src/lib/relay/protocol';
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -72,5 +73,23 @@ describe("CI's browsers", () => {
 		expect(locked).toMatch(/^\d+\.\d+\.\d+$/);
 		expect(pinned).toBe(locked);
 		expect(image).toBe(locked);
+	});
+});
+
+describe('a build without a relay', () => {
+	it('is what the gate runs the no-relay journey on, in its own Playwright run', () => {
+		const command = source('Dockerfile.test').match(/^CMD (.+)$/m)?.[1] ?? '';
+		const run = command.split('&&').find((step) => step.includes('tests/e2e/no-relay.test.ts'));
+		expect(run).toContain(`VITE_RELAY_URL=${NO_RELAY} bun run test:e2e tests/e2e/no-relay.test.ts`);
+		// Playwright builds the app with the VITE_RELAY_URL it is given, the fixture relay's by default.
+		expect(source('playwright.config.ts')).toContain(
+			"VITE_RELAY_URL: process.env.VITE_RELAY_URL ?? 'http://localhost:4174'"
+		);
+	});
+
+	it('is what GitHub Pages deploys while RELAY_URL is unset, instead of failing', () => {
+		const pages = source('.github/workflows/pages.yml');
+		expect(pages).toContain(`VITE_RELAY_URL: \${{ env.RELAY_URL || '${NO_RELAY}' }}`);
+		expect(pages).not.toContain('exit 1');
 	});
 });

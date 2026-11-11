@@ -221,5 +221,9 @@ describe('labels', () => {
 		expect(animationFileName({ title: 't', formatId: '2' }, { start: 0, end: 1 }, 'apng')).toBe(
 			't (0.0s-1.0s) [2].png'
 		);
+		// A video from this device has no format to name.
+		expect(animationFileName({ title: 'Holiday' }, { start: 1, end: 2 }, 'webp')).toBe(
+			'Holiday (1.0s-2.0s).webp'
+		);
 	});
 });
