@@ -93,3 +93,23 @@ describe('a build without a relay', () => {
 		expect(pages).not.toContain('exit 1');
 	});
 });
+
+describe("Dockerfile.test's wheel layer", () => {
+	it('copies every module fetch-wheels.ts imports before running it: the layer holds nothing else', () => {
+		const dockerfile = source('Dockerfile.test');
+		const run = dockerfile.indexOf('RUN bun scripts/fetch-wheels.ts');
+		expect(run).toBeGreaterThan(0);
+		const stage = dockerfile.lastIndexOf('\nFROM ', run);
+		const copied = [
+			...dockerfile.slice(stage, run).matchAll(/^COPY (?!--from)(.+) \S+$/gm)
+		].flatMap((match) => match[1].split(' '));
+		const imports = [
+			...source('scripts/fetch-wheels.ts').matchAll(/^import .* from '(\.\.?\/[^']+)';$/gm)
+		].map((match) => new URL(match[1], new URL('scripts/', import.meta.url)).pathname);
+		expect(imports.length).toBeGreaterThan(0);
+		for (const path of imports) {
+			const relative = path.slice(new URL('.', import.meta.url).pathname.length);
+			expect(copied, `${relative} is imported by fetch-wheels.ts`).toContain(relative);
+		}
+	});
+});

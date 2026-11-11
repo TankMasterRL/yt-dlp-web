@@ -34,7 +34,9 @@ RUN bun install --frozen-lockfile
 
 # Fetch the pinned yt-dlp wheels for the integration and e2e tests (own layer,
 # so source changes don't re-download them). The script verifies every SHA-256.
+# It runs with only the modules it imports (ci.test.ts checks the list).
 COPY src/lib/engine/wheels.ts src/lib/engine/
+COPY src/lib/relay/protocol.ts src/lib/relay/
 COPY scripts/fetch-wheels.ts scripts/
 RUN bun scripts/fetch-wheels.ts
 
