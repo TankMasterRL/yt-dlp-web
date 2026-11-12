@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { asset, resolve } from '$app/paths';
 	import { onMount } from 'svelte';
-	import { spawnEngine } from '$lib/engine/client';
-	import type { BootStage, FormatInfo } from '$lib/engine/runtime';
-	import { ExtractSession } from '$lib/engine/session.svelte';
+	import { getSession } from '$lib/engine/instance';
+	import { engineStatus } from '$lib/engine/present';
+	import type { FormatInfo } from '$lib/engine/runtime';
 	import { WHEELS } from '$lib/engine/wheels';
 	import { appEndpoints } from '$lib/endpoints';
 	import {
@@ -18,12 +18,16 @@
 	import { getLibrary, opfsAvailable } from '$lib/storage/instance';
 	import { progressLabel, statusLabel } from '$lib/storage/present';
 	import FormatTable from '$lib/ui/FormatTable.svelte';
+	import Spinner from '$lib/ui/Spinner.svelte';
 
 	// Resolved here, in browser-only code: workers get absolute URLs in `load`.
 	const endpoints = appEndpoints();
-	/** Null in a build without a relay (VITE_RELAY_URL=none): then no engine ever starts. */
+	/**
+	 * Null in a build without a relay (VITE_RELAY_URL=none): then no engine ever starts.
+	 * The tab's one session: it outlives this page, so coming back never boots Pyodide again.
+	 */
 	const session = endpoints.relay
-		? new ExtractSession(spawnEngine, {
+		? getSession({
 				assetsBase: endpoints.assetsBase,
 				relayEndpoint: endpoints.relay.relay,
 				solveEndpoint: endpoints.relay.solve
@@ -60,20 +64,13 @@
 
 	onMount(() => {
 		if (!session) return;
+		// Idempotent: a session already booted (or booting) on an earlier visit goes on as it is.
 		session.boot().catch(() => {});
 		void library.mergeAvailable().then((available) => (canMerge = available));
 		void opfsAvailable().then((available) => (canStore = available));
-		return () => session.dispose();
 	});
 
-	let input = $state('');
 	const ytdlp = WHEELS.find((w) => w.name === 'yt-dlp')!;
-	const STAGE: Record<BootStage, string> = {
-		runtime: 'Loading the Python runtime…',
-		wheels: `Installing yt-dlp ${ytdlp.version}…`,
-		'yt-dlp': 'Starting yt-dlp…',
-		ready: `yt-dlp ${ytdlp.version} ready`
-	};
 
 	const video = $derived(session?.result?.ok ? primaryVideo(session.result.info) : null);
 	/** yt-dlp's bv*+ba: the best separate video and audio streams, to merge here. */
@@ -86,19 +83,17 @@
 			approx: sizes.some((s) => s!.approx)
 		};
 	});
-	const engineStatus = $derived(
-		!session
-			? ''
-			: session.engineState === 'failed'
-				? `The engine failed to start: ${session.engineError}`
-				: session.bootStage
-					? STAGE[session.bootStage]
-					: 'Waiting to start…'
+	const engine = $derived(
+		session &&
+			engineStatus(
+				{ state: session.engineState, stage: session.bootStage, error: session.engineError },
+				ytdlp.version
+			)
 	);
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
-		void session?.extract(input);
+		void session?.extract(session.input);
 	}
 </script>
 
@@ -137,7 +132,7 @@
 				autocomplete="off"
 				spellcheck="false"
 				placeholder="https://www.youtube.com/watch?v=…"
-				bind:value={input}
+				bind:value={session.input}
 				aria-invalid={session.inputError ? 'true' : undefined}
 				aria-describedby={session.inputError ? 'url-error' : undefined}
 			/>
@@ -146,7 +141,7 @@
 				type="submit"
 				disabled={session.busy || session.engineState === 'failed'}
 			>
-				{session.busy ? 'Fetching…' : 'Fetch formats'}
+				{#if session.busy}<Spinner />Fetching…{:else}Fetch formats{/if}
 			</button>
 		</div>
 		{#if session.inputError}<p id="url-error" class="error">{session.inputError}</p>{/if}
@@ -159,7 +154,7 @@
 		role="status"
 		data-engine-state={session.engineState}
 	>
-		{engineStatus}
+		{#if engine?.busy}<Spinner />{/if}{engine?.text}
 	</p>
 	{#if canStore === false}
 		<p class="status note" data-storage="unavailable">

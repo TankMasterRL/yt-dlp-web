@@ -479,6 +479,46 @@ describe('merged downloads', () => {
 		expect(deps.files.remove).toHaveBeenCalledWith('id1.audio.webm');
 	});
 
+	it('has FFmpeg loading while the parts download, and lets it go once merged', async () => {
+		const mux = remuxer();
+		const release = vi.fn();
+		mux.r.prepare = vi.fn(() => release);
+		const { library, downloader } = setup({ remuxer: mux.r });
+		await library.addMerged(video, pair);
+		// From the first byte: the merge then finds it ready instead of waiting for it.
+		expect(mux.r.prepare).toHaveBeenCalledOnce();
+		downloader.finish('id1', 30);
+		await flush();
+		downloader.finish('id1', 20);
+		await flush();
+		expect(mux.merges).toHaveLength(1);
+		expect(release).not.toHaveBeenCalled();
+		mux.finish(48);
+		await flush();
+		expect(library.items[0].status).toBe('complete');
+		expect(release).toHaveBeenCalledOnce();
+	});
+
+	it('lets FFmpeg go when a merged download pauses or fails, and loads it again on resume', async () => {
+		const mux = remuxer();
+		const release = vi.fn();
+		mux.r.prepare = vi.fn(() => release);
+		const { library, downloader } = setup({ remuxer: mux.r });
+		await library.addMerged(video, pair);
+		await library.pause('id1');
+		await flush();
+		expect(library.items[0].status).toBe('paused');
+		expect(release).toHaveBeenCalledOnce();
+
+		await library.resume('id1');
+		expect(mux.r.prepare).toHaveBeenCalledTimes(2);
+		downloader.fail('id1', new Error('HTTP 500'));
+		await flush();
+		expect(library.items[0].status).toBe('failed');
+		expect(release).toHaveBeenCalledTimes(2);
+		expect(mux.merges).toEqual([]);
+	});
+
 	it('keeps the parts when merging fails, so a retry only re-merges', async () => {
 		const mux = remuxer();
 		const { library, downloader, deps } = setup({ remuxer: mux.r });

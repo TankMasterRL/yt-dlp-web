@@ -46,6 +46,36 @@ test.describe('extraction in a real browser worker', () => {
 		expect(consoleCsp).toEqual([]);
 	});
 
+	test('keeps the engine, and what it found, across a visit to the library', async ({ page }) => {
+		const engines: string[] = [];
+		page.on('worker', (worker) => {
+			if (worker.url().includes('engine')) engines.push(worker.url());
+		});
+		await page.goto('/');
+		await engineReady(page);
+		await page.getByLabel('Video URL').fill('https://www.fixtures.test/watch');
+		await page.getByRole('button', { name: 'Fetch formats' }).click();
+		const title = page.getByRole('heading', { level: 2, name: /^Big Buck Fixture/ });
+		await expect(title).toBeVisible({ timeout: EXTRACTION_MS });
+
+		await page
+			.getByRole('navigation', { name: 'Main' })
+			.getByRole('link', { name: 'Library' })
+			.click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Library' })).toBeVisible();
+		await page
+			.getByRole('navigation', { name: 'Main' })
+			.getByRole('link', { name: 'Download' })
+			.click();
+		// Back at once: no second Pyodide to load (ready from the first moment, not again after
+		// booting), and the formats still listed.
+		await expect(page.getByRole('heading', { level: 1, name: 'Download' })).toBeVisible();
+		expect(await page.locator('#engine-status').getAttribute('data-engine-state')).toBe('ready');
+		await expect(title).toBeVisible();
+		await expect(page.getByLabel('Video URL')).toHaveValue('https://www.fixtures.test/watch');
+		expect(engines).toHaveLength(1);
+	});
+
 	test('follows a redirect hop by hop through the relay', async ({ page }) => {
 		await page.goto('/');
 		await engineReady(page);

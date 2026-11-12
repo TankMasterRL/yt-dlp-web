@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import time
 
 import yt_dlp
+from yt_dlp.extractor import gen_extractor_classes
 from yt_dlp.utils import YoutubeDLError
 
 #: Parameters every extraction runs with; callers may add but not remove safety.
@@ -79,6 +81,42 @@ def extract(url: str, options_json: str = '{}', on_log=None) -> str:
     except Exception as e:  # never hand the UI an unhandled Python exception
         return _failure(f'Internal error ({type(e).__name__}): {e}', logger)
     return json.dumps({'ok': True, 'info': info, 'warnings': logger.warnings})
+
+
+#: How long a slice of warming up runs before it yields: an extraction asked for
+#: meanwhile waits for one slice at most.
+WARM_SLICE_SECONDS = 0.02
+
+
+def warm_up():
+    """Do a first extraction's one-time work ahead of it, a slice at a time, with no network.
+
+    A first extraction compiles extractor after extractor's URL pattern until one
+    claims the URL and — for a page none claims — imports every extractor module
+    to look for embedded players in it: seconds of work (tens in some browsers)
+    that every later extraction skips. This makes the same calls yt-dlp's
+    generic extractor makes, on a page with nothing in it, so nothing is
+    fetched. A generator: it yields after each slice of about
+    ``WARM_SLICE_SECONDS``, and the engine worker runs one slice per task.
+    """
+    url = 'https://warm-up.invalid/'
+    webpage = '<!doctype html><html><head><title></title></head><body></body></html>'
+    with yt_dlp.YoutubeDL({**BASE_PARAMS, 'logger': _Logger()}) as ydl:
+        extractors = list(gen_extractor_classes())
+        steps = [
+            *((ie.suitable, (url,)) for ie in extractors),
+            *((lambda ie: list(ie.extract_from_webpage(ydl, url, webpage)), (ie,))
+              for ie in extractors),
+        ]
+        until = time.perf_counter() + WARM_SLICE_SECONDS
+        for step, args in steps:
+            try:
+                step(*args)
+            except Exception:  # a nicety: an extractor that fails here fails as itself when used
+                pass
+            if time.perf_counter() >= until:
+                yield
+                until = time.perf_counter() + WARM_SLICE_SECONDS
 
 
 def _failure(error: str, logger: _Logger) -> str:

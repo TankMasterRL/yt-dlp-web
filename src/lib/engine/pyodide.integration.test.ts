@@ -141,6 +141,34 @@ str(keys)`);
 		expect(handlers).toBe("['Relay']");
 	});
 
+	it("does a first extraction's one-time work ahead of it, a slice at a time, with no network", () => {
+		// Before any extraction here: nothing compiled or imported yet.
+		const pending = () =>
+			py.runPython(`
+from yt_dlp.extractor import gen_extractor_classes
+classes = list(gen_extractor_classes())
+str([
+    sum(1 for ie in classes if ie._VALID_URL is not False and '_VALID_URL_RE' not in ie.__dict__),
+    sum(1 for ie in classes if '_real_class' not in ie.__dict__),
+])`);
+		const [patterns, modules] = JSON.parse(pending()) as number[];
+		expect(patterns).toBeGreaterThan(1000);
+		expect(modules).toBeGreaterThan(1000);
+
+		seen.length = 0;
+		const step = engine.warmUp();
+		let slices = 1;
+		while (step()) slices++;
+		// Many slices, so an extraction asked for meanwhile waits for one at most.
+		expect(slices).toBeGreaterThan(10);
+		expect(seen).toEqual([]);
+		// Every extractor's URL pattern compiled and module imported, as a first extraction of a
+		// page no extractor claims would leave them.
+		expect(JSON.parse(pending())).toEqual([0, 0]);
+		// Done is done.
+		expect(step()).toBe(false);
+	});
+
 	it('extracts a direct media URL through the transport', () => {
 		seen.length = 0;
 		const result = engine.extract('https://media.fixtures.test/clip.mp4');

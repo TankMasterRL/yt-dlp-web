@@ -62,6 +62,11 @@ export interface MergeRequest {
 export interface Remuxer {
 	/** Whether this deployment ships an FFmpeg core (YT_DLP_WEB_FFMPEG=0 leaves it out). */
 	available(): Promise<boolean>;
+	/**
+	 * Starts loading FFmpeg for a merge to come, so the merge finds it ready.
+	 * Returns the release: FFmpeg goes once every preparation and merge has ended.
+	 */
+	prepare?(): () => void;
 	merge(request: MergeRequest): Promise<{ bytesTotal: number }>;
 }
 
@@ -320,11 +325,25 @@ export class Library {
 	}
 
 	/**
+	 * FFmpeg loads while the parts download: the merge finds it ready, instead of
+	 * the item sitting at "merging" while tens of megabytes of core arrive. It is
+	 * let go when the merge ends, or the download pauses or fails.
+	 */
+	async #downloadAndMerge(item: DownloadedItem): Promise<number> {
+		const release = this.#deps.remuxer!.prepare?.();
+		try {
+			return await this.#downloadThenMerge(item);
+		} finally {
+			release?.();
+		}
+	}
+
+	/**
 	 * Parts download one at a time under the item's id (and so its Web Lock);
 	 * a finished part answers its next range request with 416 at once, so a
 	 * resume or a retry after a failed merge skips straight past it.
 	 */
-	async #downloadAndMerge(item: DownloadedItem): Promise<number> {
+	async #downloadThenMerge(item: DownloadedItem): Promise<number> {
 		let done = 0;
 		for (const part of item.parts!) {
 			const { bytesTotal } = await this.#deps.downloader.start(

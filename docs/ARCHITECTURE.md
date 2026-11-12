@@ -65,6 +65,20 @@ yt-dlp has no required dependencies, so its wheel and the yt-dlp-ejs solver whee
 unpacked with `pyodide.unpackArchive()`. There is no micropip and no PyPI at runtime. Before
 unpacking, each wheel is checked against the SHA-256 pinned in `src/lib/engine/wheels.ts`.
 
+**Starting quickly.** Booting is the longest wait in the app, so nothing in it waits for anything
+it does not need. The wheels download and are checked while Pyodide starts, and the relay is
+probed alongside (for at most 10 s); only installing yt-dlp waits for the probe. The page counts
+the boot's three steps beside a busy sign. The session outlives the download page: back from the
+library, yt-dlp is still running and the formats last found are still listed.
+
+**Warming up.** A first extraction does seconds of one-time work (tens in Firefox): it compiles
+extractor after extractor's URL pattern until one claims the URL, and on a page none claims it
+imports every extractor module to look for embedded players. Once the engine is ready,
+`api.warm_up()` does that work ahead of time, making the same calls on a blank page, so nothing is
+fetched. It runs in slices of about 20 ms, one per worker task, so an extraction asked for meanwhile
+waits for one slice at most. In Chromium, the first extraction of the fixture page a few seconds
+after boot takes about 0.2 s instead of 3.9 s.
+
 **Networking.** Pyodide has no sockets, and its `ssl` module is a stub, so `bootstrap.install()`
 removes yt-dlp's built-in request handlers and registers `RelayRH`, a yt-dlp `RequestHandler`.
 
@@ -174,8 +188,9 @@ remux worker to merge them:
   I/O onto OPFS sync access handles, so nothing is buffered in memory, whatever the video's size.
   It exposes exactly three files.
 - **When it exists.** The core (~31 MiB of wasm for ffmpeg.wasm, ~2.5 MiB for the remux core) is
-  fetched only when a merge starts, and the worker ends
-  when the last merge does.
+  fetched only for a merge: it starts loading when the merge's parts start downloading, so the
+  merge finds it ready, and the worker ends when the last merge ends or its download pauses or
+  fails.
 - **Leaving it out.** Builds with `YT_DLP_WEB_FFMPEG=0` leave FFmpeg out. A HEAD probe tells
   the page, which then says merging is unavailable.
 
@@ -219,15 +234,17 @@ crop, format, quality, frame rate, width — and does the work:
   is then the grid picture on screen at its time, taken by seeking to that picture's middle, which
   no rounding can tip over. A video whose pictures keep no steady rate has no grid, and its frames
   are taken at their times.
-- **The video's own rate guides the animation's.** When the dialog opens, its first seconds play
-  for a moment, which tells the video's frame rate (`frameRate`: 29.97 only when the measurement
-  rules 30 out). The rates that step evenly through its pictures (`evenRates`: 15 or 10 fps of a
+- **The video's own rate guides the animation's.** The dialog is ready to use once the browser
+  knows the video's size and length. Meanwhile the first seconds play for a moment in a `<video>`
+  of their own (in the page and unseen, like the frame timeline's), which tells the video's frame
+  rate (`frameRate`: 29.97 only when the measurement rules 30 out). The readout says it is being
+  measured; when it is known, the animation's rate follows it, unless one was chosen meanwhile. The rates that step evenly through its pictures (`evenRates`: 15 or 10 fps of a
   30 fps video) are smooth; any other steps unevenly — 12 fps of 30 goes 2, 3, 2, 3 pictures — and
   motion judders, which the dialog says. A new animation starts at the even rate of 10 to 15 fps,
   if there is one.
 - **The animate worker encodes them**, one worker per animation, gone once the file is out. When
-  the dialog opens, a worker is asked which formats this browser can make, and only those are
-  offered. Each format keeps its own time from the frame rate, exactly where its unit allows:
+  the dialog first opens, a worker is asked which formats this browser can make (once per page),
+  and only those are offered. Each format keeps its own time from the frame rate, exactly where its unit allows:
 
 | Format  | Encoder                                                                                                                                                                                                                                                                                                                                                          | Timing                         |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |

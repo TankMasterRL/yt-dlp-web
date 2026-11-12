@@ -23,9 +23,12 @@ const spawnWorker = () =>
 	new Worker(trustedWorkerUrl(remuxWorkerUrl), { type: 'module', name: 'remux' });
 
 /**
- * One worker, started when a merge starts and stopped when the last running
- * merge ends: the core's wasm (~31 MiB for ffmpeg.wasm, ~2.5 MiB for the
- * remux core) and its heap are held only while used.
+ * One worker, started when a merge is prepared (its parts start downloading)
+ * or starts, and stopped once the last of those ends: the core's wasm
+ * (~31 MiB for ffmpeg.wasm, ~2.5 MiB for the remux core) and its heap are
+ * held only while a merge is under way, and it is loaded by the time the
+ * parts are in. A load that fails fails the merges waiting on it; the next
+ * one after the worker stops tries afresh.
  */
 export function workerRemuxer(
 	assetsBase: string,
@@ -42,6 +45,22 @@ export function workerRemuxer(
 		return started;
 	};
 
+	/** Holds the worker until the returned release is called (once; again does nothing). */
+	const hold = () => {
+		running++;
+		const current = (client ??= start());
+		let held = true;
+		const release = () => {
+			if (!held) return;
+			held = false;
+			if (--running === 0) {
+				current.terminate();
+				client = null;
+			}
+		};
+		return { current, release };
+	};
+
 	return {
 		available: () =>
 			(available ??= fetchImpl(new URL(FFMPEG_DIR + FFMPEG_CORE_WASM, assetsBase), {
@@ -49,16 +68,13 @@ export function workerRemuxer(
 			})
 				.then((response) => response.ok)
 				.catch(() => false)),
+		prepare: () => hold().release,
 		async merge(request) {
-			running++;
-			const current = (client ??= start());
+			const { current, release } = hold();
 			try {
 				return await current.call({ request });
 			} finally {
-				if (--running === 0) {
-					current.terminate();
-					client = null;
-				}
+				release();
 			}
 		}
 	};

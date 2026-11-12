@@ -226,6 +226,18 @@ describe('solver client (engine worker)', () => {
 		).toBe('unreachable');
 	});
 
+	it('gives up on a relay that never answers the probe', async () => {
+		// A host that swallows requests would otherwise hold the engine's boot forever.
+		let signal: AbortSignal | undefined;
+		const silent = (_url: RequestInfo | URL, init?: RequestInit) =>
+			new Promise<Response>((_resolve, reject) => {
+				signal = init?.signal ?? undefined;
+				signal?.addEventListener('abort', () => reject(signal!.reason));
+			});
+		expect(await probeRelay('/solve', silent, 20)).toBe('unreachable');
+		expect(signal?.aborted).toBe(true);
+	});
+
 	it('derives the endpoint from the relay URL', () => {
 		expect(solveEndpoint(undefined)).toBe('/solve');
 		expect(relayEndpoints(undefined)).toEqual({ relay: '/relay', solve: '/solve' });
