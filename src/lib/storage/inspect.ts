@@ -4,7 +4,7 @@
  * imported: what it cannot play is refused before anything is stored. Also
  * reads its length and size, and takes a still for the library's thumbnail.
  */
-import { mediaMetadata, seek, type SeekableVideo } from '$lib/animate/frames';
+import { mediaMetadata, openVideo, seek, type SeekableVideo } from '$lib/animate/frames';
 import type { MediaFacts } from './imported';
 
 /** Thumbnails are shown at most 8rem wide; twice that covers high-density screens. */
@@ -58,12 +58,7 @@ async function still(
 
 /** The browser's wiring: a detached, muted <video> over a blob: URL of the file. */
 export async function inspectFile(file: File): Promise<MediaFacts> {
-	const video = document.createElement('video');
-	video.muted = true;
-	video.playsInline = true;
-	video.preload = 'auto';
-	const url = URL.createObjectURL(file);
-	video.src = url;
+	const { video, close } = openVideo(file);
 	try {
 		return await inspectMedia(
 			video,
@@ -76,8 +71,6 @@ export async function inspectFile(file: File): Promise<MediaFacts> {
 		throw e;
 	} finally {
 		// Let go of the file: no element keeps reading it once this is done.
-		video.removeAttribute('src');
-		video.load();
-		URL.revokeObjectURL(url);
+		close();
 	}
 }

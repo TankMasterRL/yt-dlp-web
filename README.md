@@ -43,10 +43,10 @@ Cloudflare Worker: holds no secrets, stores nothing, parses nothing
   save back unchanged and animate like downloads. _Animate a video file…_ opens one straight from
   disk in the animation maker instead, copying nothing (that works without private storage, too).
   Nothing you import is uploaded anywhere.
-- **Animated images from your videos.** Pick a stretch of any video in the library on a timeline,
-  drag the crop handles over the picture, choose the format, frame rate and width, and the page
-  makes a looping animation. The browser decodes the frames itself; a worker encodes them, with no
-  FFmpeg needed:
+- **Animated images from your videos.** Pick a stretch of any video in the library on a timeline
+  of its pictures, which marks each frame the animation will take, drag the crop handles over the
+  picture, choose the format, frame rate and width, and the page makes a looping animation. The
+  browser decodes the frames itself; a worker encodes them, with no FFmpeg needed:
 
   | Format  | Made by                                                      | Where                                    |
   | ------- | ------------------------------------------------------------ | ---------------------------------------- |

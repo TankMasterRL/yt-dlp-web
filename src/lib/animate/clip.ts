@@ -128,6 +128,34 @@ export function frameTimes(range: TimeRange, fps: number): number[] {
 	);
 }
 
+/** Frame marks closer than this, in CSS pixels, would run together into a bar. */
+export const MIN_MARK_GAP = 4;
+
+/** Where the time range marks the animation's frames. */
+export interface FrameMarks {
+	/** Seconds: where the first frame is taken, the range's start. */
+	start: number;
+	/** Seconds: `count` frames' worth, a mark at the start of each. */
+	length: number;
+	count: number;
+}
+
+/**
+ * The marks of the frames `range` makes at `fps`, on a track `trackWidth`
+ * pixels wide showing `duration` seconds — or null where they would stand
+ * closer than MIN_MARK_GAP.
+ */
+export function frameMarks(
+	range: TimeRange,
+	fps: number,
+	duration: number,
+	trackWidth: number
+): FrameMarks | null {
+	if (!(duration > 0 && fps > 0) || trackWidth / duration / fps < MIN_MARK_GAP) return null;
+	const count = frameCount(range, fps);
+	return { start: range.start, length: count / fps, count };
+}
+
 /**
  * Frame `index`'s delay in units of 1/`perSecond` s (GIF counts centiseconds,
  * WebP milliseconds). 1/fps is rarely a whole number of them, so the rounding

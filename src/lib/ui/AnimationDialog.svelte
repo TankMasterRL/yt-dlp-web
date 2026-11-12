@@ -16,6 +16,7 @@
 	import { frameRate } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
+	import Filmstrip from './Filmstrip.svelte';
 	import RangeSlider from './RangeSlider.svelte';
 	import { saveFile } from './save';
 
@@ -205,9 +206,12 @@
 					bind:range={editor.range}
 					duration={editor.media.duration}
 					{playhead}
+					fps={editor.fps}
 					disabled={editor.rendering}
 					onscrub={show}
-				/>
+				>
+					<Filmstrip {file} media={editor.media} />
+				</RangeSlider>
 				<p class="readout" aria-live="polite">
 					<span>Start <strong>{formatClipTime(editor.range.start)}</strong></span>
 					<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
