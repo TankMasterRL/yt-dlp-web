@@ -127,10 +127,13 @@ such as `localhost` or a `github.io` account — so it only says how much more f
 ### Importing from the device
 
 _Import videos…_ takes files from a file dialog. Each one is first opened the way playback will
-open it, in a detached, muted `<video>` over a `blob:` URL (`inspect.ts`): a file the browser
-cannot play is refused before anything is stored. That also gives its length and size, and a still
-from a tenth of the way in (at most 10 s) drawn on a canvas, which becomes its thumbnail — so an
-imported item needs no relay for anything.
+open it, in a muted `<video>` over a `blob:` URL (`inspect.ts`): a file the browser cannot play is
+refused before anything is stored. That also gives its length and size, and a still from a tenth of
+the way in (at most 10 s) drawn on a canvas, which becomes its thumbnail — so an imported item needs
+no relay for anything. The `<video>` is in the page, one transparent pixel in a corner of the
+screen, as the frame timeline's is (`openVideo`): WebKit draws a video on a canvas only while it is
+in the page and on screen, and from a detached one the thumbnail came out black. A still that is
+still transparent after drawing is no thumbnail, and the library shows its placeholder instead.
 
 The item (`origin: 'import'`, `imported.ts`) is named after the file. The download worker copies
 the bytes into OPFS under the item's Web Lock, like a download: the `File` is posted to the worker
@@ -186,8 +189,9 @@ The dialog plays the file from a `blob:` URL, like the player, and lays two cont
   The track is a frame timeline (`Filmstrip.svelte`, `filmstrip.ts`): pictures from across the
   whole video, as many as fill it, each the middle of the stretch under it, with the video
   outside the range darkened. A second `<video>` over the same file takes them, so the dialog's
-  own is never moved. It is in the page, one transparent pixel in a corner of the screen, because
-  WebKit draws a video on a canvas only while it is in the page and on screen. Over the range, a
+  own is never moved. It is in the page, one transparent pixel in a corner of the screen
+  (`openVideo`), because WebKit draws a video on a canvas only while it is in the page and on
+  screen. Over the range, a
   mark stands where each of the animation's frames will be taken, wherever the marks are far
   enough apart to tell.
 - **A crop**: a box with eight handles over the picture (`CropBox.svelte`), in the video's own

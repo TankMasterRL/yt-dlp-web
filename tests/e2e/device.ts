@@ -101,8 +101,25 @@ export async function importJourney(page: Page): Promise<boolean> {
 	await expect(card).toContainText('Imported');
 	await expect(card).toContainText('From this device');
 	await expect(card).toContainText('360p');
-	// Its thumbnail is a still the browser took of it.
-	await expect(card.locator('.thumb img')).toHaveCount(1);
+	// Its thumbnail is a still the browser took of it: the picture, never the black a canvas
+	// turns into when the browser drew nothing on it (WebKit, from a video outside the page).
+	const thumbnail = card.locator('.thumb img');
+	await expect(thumbnail).toHaveCount(1);
+	const still = await probe('read the thumbnail', () =>
+		thumbnail.evaluate(async (img: HTMLImageElement) => {
+			await img.decode();
+			const canvas = new OffscreenCanvas(img.naturalWidth, img.naturalHeight);
+			const context = canvas.getContext('2d')!;
+			context.drawImage(img, 0, 0);
+			const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+			let sum = 0;
+			for (let i = 0; i < pixels.length; i += 4) sum += pixels[i] + pixels[i + 1] + pixels[i + 2];
+			return { width: canvas.width, height: canvas.height, mean: sum / (pixels.length / 4) / 3 };
+		})
+	);
+	// 320 × 180, and as bright as the clip's frame at 0.2 s (about 135; black is 0).
+	expect(still).toMatchObject({ width: 320, height: 180 });
+	expect(still.mean).toBeGreaterThan(80);
 	expect(await opfsFiles(page)).toHaveLength(1);
 
 	// It plays: the browser decodes the stored copy.

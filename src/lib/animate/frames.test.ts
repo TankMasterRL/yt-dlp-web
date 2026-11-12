@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { frameTimes, type TimeRange } from './clip';
 import {
 	learnGrid,
 	mediaMetadata,
+	openVideo,
 	seek,
 	videoFrames,
 	videoMetadata,
@@ -373,5 +374,46 @@ describe('mediaMetadata', () => {
 		const metadata = mediaMetadata(video, controller.signal);
 		controller.abort(new DOMException('signal timed out', 'TimeoutError'));
 		await expect(metadata).rejects.toMatchObject({ name: 'TimeoutError' });
+	});
+});
+
+describe('openVideo', () => {
+	// jsdom has no blob: URLs, and loads no media.
+	const urls = { create: vi.fn(() => 'blob:the-file'), revoke: vi.fn() };
+	Object.assign(URL, { createObjectURL: urls.create, revokeObjectURL: urls.revoke });
+	afterEach(() => {
+		vi.clearAllMocks();
+		vi.restoreAllMocks();
+		document.body.replaceChildren();
+	});
+
+	it('opens the file in a muted video in the page, where nobody sees it', () => {
+		const file = new Blob(['a video']);
+		const { video } = openVideo(file);
+		const element = video as HTMLVideoElement;
+		expect(urls.create).toHaveBeenCalledWith(file);
+		expect(element.src).toBe('blob:the-file');
+		expect(element.muted).toBe(true);
+		expect(element.playsInline).toBe(true);
+		// WebKit draws a video on a canvas only while it is in the page and on screen:
+		// one transparent pixel, fixed to the viewport's corner, whatever scrolls.
+		expect(document.body).toContainElement(element);
+		expect(element).toHaveAttribute('aria-hidden', 'true');
+		expect(element.style.position).toBe('fixed');
+		expect([element.style.left, element.style.top]).toEqual(['0px', '0px']);
+		expect([element.style.width, element.style.height]).toEqual(['1px', '1px']);
+		expect(element.style.opacity).toBe('0');
+		expect(element.style.pointerEvents).toBe('none');
+	});
+
+	it('lets go of the file when closed, and takes the video out of the page', () => {
+		const load = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+		const { video, close } = openVideo(new Blob(['a video']));
+		const element = video as HTMLVideoElement;
+		close();
+		expect(element.isConnected).toBe(false);
+		expect(element.hasAttribute('src')).toBe(false);
+		expect(load).toHaveBeenCalledOnce();
+		expect(urls.revoke).toHaveBeenCalledWith('blob:the-file');
 	});
 });
