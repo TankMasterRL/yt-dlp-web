@@ -8,6 +8,8 @@ import {
 	defaultRange,
 	delayAt,
 	dragCrop,
+	evenRates,
+	formatFps,
 	frameCount,
 	formatClipTime,
 	frameDelays,
@@ -17,6 +19,7 @@ import {
 	outputSize,
 	sampleIndices,
 	setRangeEdge,
+	suggestedFps,
 	type Rect
 } from './clip';
 
@@ -165,6 +168,38 @@ describe('frames', () => {
 
 	it('has a ceiling', () => {
 		expect(MAX_FRAMES).toBeGreaterThanOrEqual(300);
+	});
+});
+
+describe("frame rates against the video's", () => {
+	it("are even when each frame steps the same number of the video's pictures", () => {
+		expect(evenRates(30)).toEqual([5, 10, 15, 30]);
+		expect(evenRates(30000 / 1001)).toEqual([5, 10, 15, 30]);
+		expect(evenRates(60)).toEqual([5, 10, 12, 15, 20, 30]);
+		expect(evenRates(24000 / 1001)).toEqual([12]);
+		expect(evenRates(25)).toEqual([5, 25]);
+		// Never faster than the video: a picture shown twice is no smoother.
+		expect(evenRates(12)).toEqual([12]);
+		expect(evenRates(7.5)).toEqual([]);
+	});
+
+	it('suggest the even rate of 10 to 15 fps that is smoothest, or 12 fps when none is', () => {
+		expect(suggestedFps(30)).toBe(15);
+		expect(suggestedFps(60)).toBe(15);
+		expect(suggestedFps(24000 / 1001)).toBe(12);
+		expect(suggestedFps(50)).toBe(10);
+		expect(suggestedFps(25)).toBe(12);
+		expect(suggestedFps(null)).toBe(12);
+	});
+
+	it('are written as people know them', () => {
+		expect([30, 30000 / 1001, 24000 / 1001, 12, 7.5].map(formatFps)).toEqual([
+			'30',
+			'29.97',
+			'23.98',
+			'12',
+			'7.5'
+		]);
 	});
 });
 

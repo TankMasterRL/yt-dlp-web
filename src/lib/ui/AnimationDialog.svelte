@@ -4,13 +4,16 @@
 		MAX_FRAMES,
 		WIDTH_CHOICES,
 		animationFileName,
+		evenRates,
 		formatClipTime,
+		formatFps,
 		fullFrame
 	} from '$lib/animate/clip';
 	import { workerEncoder, workerFormats, type FormatSupport } from '$lib/animate/client';
 	import { AnimationEditor } from '$lib/animate/editor.svelte';
 	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '$lib/animate/formats';
-	import { videoFrames, videoMetadata } from '$lib/animate/frames';
+	import { learnGrid, seek, videoFrames, videoMetadata } from '$lib/animate/frames';
+	import { frameRate } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
 	import RangeSlider from './RangeSlider.svelte';
@@ -40,6 +43,13 @@
 	let support = $state<FormatSupport | null>(null);
 	let frameRequest = 0;
 	const spec = $derived(FORMATS[editor.format]);
+	/** The rates that step evenly through the video's pictures, as a phrase: '5, 10, 15 or 30'. */
+	const smoothRates = $derived.by(() => {
+		const rates = editor.sourceFps ? evenRates(editor.sourceFps) : [];
+		return rates.length > 1
+			? `${rates.slice(0, -1).join(', ')} or ${rates.at(-1)}`
+			: rates.join('');
+	});
 
 	/** Whether the worker has said which formats it can make (for tests, as data-formats). */
 	let asked = $state<'asking' | 'known' | 'unknown'>('asking');
@@ -57,18 +67,51 @@
 	// The video plays from a blob: URL over the file (CSP media-src blob:).
 	$effect(() => {
 		const url = URL.createObjectURL(file);
+		const opening = new AbortController();
 		video.src = url;
 		dialog.showModal();
-		videoMetadata(video).then(
-			(media) => editor.setMedia(media),
-			(e: Error) => (loadError = e.message)
-		);
+		videoMetadata(video)
+			.then(async (media) =>
+				editor.setMedia(media, await sourceFps(media.duration, opening.signal))
+			)
+			.catch((e: Error) => {
+				if (!opening.signal.aborted) loadError = e.message;
+			});
 		return () => {
+			opening.abort();
 			stopPreview();
 			editor.cancel();
 			URL.revokeObjectURL(url);
 		};
 	});
+
+	/** How long the dialog waits to learn the video's frame rate before going on without it. */
+	const RATE_TIMEOUT_MS = 4000;
+
+	/**
+	 * The video's own frame rate, from moments of its first seconds playing (enough to
+	 * tell 29.97 fps from 30); null when the browser can't tell, or not soon.
+	 */
+	async function sourceFps(duration: number, signal: AbortSignal): Promise<number | null> {
+		const looking = new AbortController();
+		const stop = () => looking.abort(signal.reason);
+		signal.addEventListener('abort', stop);
+		const timer = setTimeout(
+			() => looking.abort(new DOMException('', 'TimeoutError')),
+			RATE_TIMEOUT_MS
+		);
+		let grid = null;
+		try {
+			grid = await learnGrid(video, { start: 0, end: Math.min(duration, 4) }, looking.signal);
+		} catch (e) {
+			if (signal.aborted) throw e;
+		} finally {
+			clearTimeout(timer);
+			signal.removeEventListener('abort', stop);
+		}
+		await seek(video, 0, signal);
+		return grid && frameRate(grid);
+	}
 
 	// The finished file, shown from a blob: URL (CSP img-src blob:).
 	$effect(() => {
@@ -171,6 +214,9 @@
 				<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
 				<span>Length <strong>{(editor.range.end - editor.range.start).toFixed(1)} s</strong></span>
 				<span>Crop <strong>{editor.crop.width} × {editor.crop.height}</strong></span>
+				{#if editor.sourceFps}
+					<span>Video <strong>{formatFps(editor.sourceFps)} fps</strong></span>
+				{/if}
 			</p>
 			<div class="options">
 				<label>
@@ -218,6 +264,12 @@
 				>
 			</div>
 			<p class="format-note">{spec.label}: {spec.note}</p>
+			{#if !editor.even && editor.sourceFps}
+				<p class="format-note" data-uneven>
+					{editor.fps} fps doesn't step evenly through this video's {formatFps(editor.sourceFps)} fps,
+					so motion judders.{smoothRates ? ` Smooth: ${smoothRates} fps.` : ''}
+				</p>
+			{/if}
 			<div class="make">
 				<p id="animate-summary" class="summary">
 					{spec.label}: {editor.size.width} × {editor.size.height} px · {editor.frameCount} frames

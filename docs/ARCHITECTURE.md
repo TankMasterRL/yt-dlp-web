@@ -195,6 +195,25 @@ crop, format, quality, frame rate, width — and does the work:
   (`frames.ts`). Media elements exist only on the main thread, and whatever the browser can play
   it can animate, with no demuxer or decoder of the app's own and whichever FFmpeg the build
   ships, or none.
+- **Seeks go to the middle of the video's pictures, never to the frame times.** A frame of an
+  animation at the video's own rate, or a whole fraction of it, falls exactly where a picture
+  starts, and containers round those starts: WebM and Matroska count whole milliseconds, so at
+  30 fps picture 2 starts at 67 ms, after 2/30 s, and a seek to 2/30 s shows picture 1. Taken at
+  the frame times, 30 fps of a 30 fps WebM came out as pictures 0, 1, 1, 3, 4, 4, … in Chromium,
+  Firefox and WebKit alike. So before taking frames the page plays a moment of the range at half
+  speed and notes when each picture starts (`requestVideoFrameCallback`'s `mediaTime`: every
+  engine reports a picture's start while playing; after a seek, Firefox and WebKit report the time
+  sought). A least-squares line through those starts is the video's frame grid (`grid.ts`),
+  refined by a few more moments further on until it is good to 2 ms across the range. Each frame
+  is then the grid picture on screen at its time, taken by seeking to that picture's middle, which
+  no rounding can tip over. A video whose pictures keep no steady rate has no grid, and its frames
+  are taken at their times.
+- **The video's own rate guides the animation's.** When the dialog opens, its first seconds play
+  for a moment, which tells the video's frame rate (`frameRate`: 29.97 only when the measurement
+  rules 30 out). The rates that step evenly through its pictures (`evenRates`: 15 or 10 fps of a
+  30 fps video) are smooth; any other steps unevenly — 12 fps of 30 goes 2, 3, 2, 3 pictures — and
+  motion judders, which the dialog says. A new animation starts at the even rate of 10 to 15 fps,
+  if there is one.
 - **The animate worker encodes them**, one worker per animation, gone once the file is out. When
   the dialog opens, a worker is asked which formats this browser can make, and only those are
   offered. Each format keeps its own time from the frame rate, exactly where its unit allows:

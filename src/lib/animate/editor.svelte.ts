@@ -6,15 +6,18 @@
  * worker; tests pass fakes).
  */
 import {
+	DEFAULT_FPS,
 	DEFAULT_SPAN,
 	MAX_FRAMES,
 	PALETTE_SAMPLES,
 	defaultRange,
+	evenRates,
 	frameCount,
 	frameTimes,
 	fullFrame,
 	outputSize,
 	sampleIndices,
+	suggestedFps,
 	type Rect,
 	type TimeRange
 } from './clip';
@@ -50,12 +53,13 @@ export interface Animation {
 	range: TimeRange;
 }
 
-export const DEFAULT_FPS = 12;
 export const DEFAULT_WIDTH = 480;
 
 export class AnimationEditor {
 	/** The video's size and length; null until its metadata is in. */
 	media = $state<VideoMetadata | null>(null);
+	/** The video's own frame rate, when the browser has shown enough of it to tell. */
+	sourceFps = $state<number | null>(null);
 	range = $state<TimeRange>({ start: 0, end: DEFAULT_SPAN });
 	crop = $state<Rect>({ x: 0, y: 0, width: 0, height: 0 });
 	fps = $state(DEFAULT_FPS);
@@ -72,6 +76,8 @@ export class AnimationEditor {
 	readonly frameCount = $derived(frameCount(this.range, this.fps));
 	readonly size = $derived(outputSize(this.crop, this.width));
 	readonly tooLong = $derived(this.frameCount > MAX_FRAMES);
+	/** Whether every frame steps the same number of the video's pictures (or nobody knows). */
+	readonly even = $derived(this.sourceFps === null || evenRates(this.sourceFps).includes(this.fps));
 
 	#spawn: SpawnEncoder;
 	#controller: AbortController | null = null;
@@ -81,9 +87,11 @@ export class AnimationEditor {
 		this.#spawn = spawn;
 	}
 
-	/** A video to work on: the first seconds of all of its picture. */
-	setMedia(media: VideoMetadata): void {
+	/** A video to work on: the first seconds of all of its picture, at a rate that suits its own. */
+	setMedia(media: VideoMetadata, sourceFps: number | null = null): void {
 		this.media = media;
+		this.sourceFps = sourceFps;
+		this.fps = suggestedFps(sourceFps);
 		this.range = defaultRange(media.duration);
 		this.crop = fullFrame(media);
 		this.result = null;
@@ -118,6 +126,7 @@ export class AnimationEditor {
 			return pixels;
 		};
 		try {
+			await source.prepare?.(range, controller.signal);
 			const samples = new Map<number, Uint8ClampedArray>();
 			if (FORMATS[format].palette) {
 				for (const i of sampleIndices(times.length, PALETTE_SAMPLES)) {
