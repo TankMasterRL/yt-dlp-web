@@ -82,21 +82,38 @@ export interface OpenedVideo {
 	close(): void;
 }
 
+/** One transparent pixel, fixed to the viewport's corner: on screen, whatever scrolls, and unseen. */
+const UNSEEN = {
+	position: 'fixed',
+	left: '0',
+	top: '0',
+	width: '1px',
+	height: '1px',
+	opacity: '0',
+	'pointer-events': 'none'
+};
+
 /**
- * A muted <video> over a blob: URL of `file` (CSP media-src blob:): `video`,
- * or a new one outside the page. WebKit (at least Playwright's, on Linux)
- * draws a video on a canvas only while it is in the page and on screen: a
- * detached one draws nothing.
+ * A muted <video> over a blob: URL of `file` (CSP media-src blob:), in the
+ * page but never seen, until closed. In the page because WebKit draws a
+ * video on a canvas only while it is in the page and on screen: detached,
+ * or off screen, it draws nothing — a black still, a blank frame timeline.
+ * Its styles go through the CSSOM, which CSP's style-src-attr does not govern.
  */
-export function openVideo(file: Blob, video = document.createElement('video')): OpenedVideo {
+export function openVideo(file: Blob): OpenedVideo {
+	const video = document.createElement('video');
 	video.muted = true;
 	video.playsInline = true;
 	video.preload = 'auto';
+	video.setAttribute('aria-hidden', 'true');
+	for (const [property, value] of Object.entries(UNSEEN)) video.style.setProperty(property, value);
 	const url = URL.createObjectURL(file);
 	video.src = url;
+	document.body.append(video);
 	return {
 		video,
 		close() {
+			video.remove();
 			video.removeAttribute('src');
 			video.load();
 			URL.revokeObjectURL(url);

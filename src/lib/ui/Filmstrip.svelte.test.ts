@@ -25,15 +25,12 @@ function recordDraws(video: FakeVideo) {
 
 function setup() {
 	const video = new FakeVideo();
-	const opened: OpenedVideo & { file?: Blob; element?: HTMLVideoElement } = {
+	const opened: OpenedVideo = {
 		video: video as unknown as OpenedVideo['video'],
 		close: vi.fn()
 	};
 	const file = new Blob(['a video']);
-	const open = vi.fn((given: Blob, element?: HTMLVideoElement) => {
-		Object.assign(opened, { file: given, element });
-		return opened;
-	});
+	const open = vi.fn((_file: Blob) => opened);
 	const draws = recordDraws(video);
 	const { container, unmount } = render(Filmstrip, { file, media, open });
 	const strip = container.querySelector<HTMLElement>('.filmstrip')!;
@@ -53,14 +50,9 @@ describe('Filmstrip', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('opens the file in a video of its own, in the page but never seen', () => {
-		const { open, opened, file, strip } = setup();
-		expect(open).toHaveBeenCalledOnce();
-		expect(opened.file).toBe(file);
-		// WebKit draws only a video that is in the page (and on screen) on a canvas.
-		expect(strip).toContainElement(opened.element!);
-		expect(opened.element).toHaveAttribute('aria-hidden', 'true');
-		expect(opened.element!.muted).toBe(true);
+	it('opens the file in a video of its own', () => {
+		const { open, file } = setup();
+		expect(open).toHaveBeenCalledExactlyOnceWith(file);
 	});
 
 	it('shows nothing until it is laid out', async () => {

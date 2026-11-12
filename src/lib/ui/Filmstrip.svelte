@@ -9,14 +9,13 @@
 		file: Blob;
 		/** Its size and length. */
 		media: VideoMetadata;
-		/** Opens the file in the strip's own <video> (tests pass a fake). */
-		open?: (file: Blob, element: HTMLVideoElement) => OpenedVideo;
+		/** Opens the file in a <video> of the strip's own (tests pass a fake). */
+		open?: (file: Blob) => OpenedVideo;
 	}
 
 	let { file, media, open = openVideo }: Props = $props();
 
 	let element: HTMLDivElement;
-	let source: HTMLVideoElement;
 	/** CSS pixels; nothing is taken until it is laid out. */
 	let strip = $state<Size>({ width: 0, height: 0 });
 	let video = $state.raw<OpenedVideo['video'] | null>(null);
@@ -29,8 +28,10 @@
 	const times = $derived(tileTimes(media.duration, count));
 	const size = $derived(tileSize(height, aspect, devicePixelRatio));
 
+	// Never the dialog's own video, which meanwhile shows the range's edges, previews and
+	// takes the animation's frames.
 	$effect(() => {
-		const opened = open(file, source);
+		const opened = open(file);
 		video = opened.video;
 		return () => {
 			video = null;
@@ -66,13 +67,6 @@
 	{#each times as time (time)}
 		<canvas data-time={time}></canvas>
 	{/each}
-	<!--
-		Where the pictures come from, never seen: in the page and on screen, because
-		WebKit draws a video on a canvas only then; the dialog's own video meanwhile
-		shows the range's edges, previews and takes the animation's frames.
-	-->
-	<video bind:this={source} class="source" muted playsinline preload="auto" aria-hidden="true"
-	></video>
 </div>
 
 <style>
@@ -80,17 +74,6 @@
 		position: absolute;
 		inset: 0;
 		display: flex;
-	}
-
-	/* One pixel in the viewport's corner, whatever scrolls; transparent. */
-	.source {
-		position: fixed;
-		left: 0;
-		top: 0;
-		width: 1px;
-		height: 1px;
-		opacity: 0;
-		pointer-events: none;
 	}
 
 	/* Side by side across the whole strip; a picture cut short shows its middle. */
