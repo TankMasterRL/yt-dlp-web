@@ -79,12 +79,24 @@ export function createSyncSolver(
  */
 export type RelayProbe = 'solves' | 'relays' | 'unreachable';
 
+/**
+ * How long the probe waits for an answer: a host that swallows requests says
+ * nothing at all, and the engine's boot waits for the probe before it installs
+ * yt-dlp. A Worker's cold start takes well under a second.
+ */
+const PROBE_TIMEOUT_MS = 10_000;
+
 export async function probeRelay(
 	solveEndpoint: string,
-	fetchImpl: typeof fetch = fetch
+	fetchImpl: typeof fetch = fetch,
+	timeoutMs = PROBE_TIMEOUT_MS
 ): Promise<RelayProbe> {
 	try {
-		const response = await fetchImpl(solveEndpoint, { credentials: 'omit', cache: 'no-store' });
+		const response = await fetchImpl(solveEndpoint, {
+			credentials: 'omit',
+			cache: 'no-store',
+			signal: AbortSignal.timeout(timeoutMs)
+		});
 		if (response.status === 204) return 'solves';
 		if (response.status === 501) return 'relays';
 		return 'unreachable';

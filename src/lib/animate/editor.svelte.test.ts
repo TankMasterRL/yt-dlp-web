@@ -217,6 +217,45 @@ describe('AnimationEditor', () => {
 		expect(editor).toMatchObject({ sourceFps: null, fps: 12, even: true });
 	});
 
+	it("takes up the video's rate learned after it opened, unless one was chosen meanwhile", () => {
+		// The editor opens on the video's metadata alone; its rate is learned later, alongside.
+		const { editor } = setup();
+		expect(editor).toMatchObject({ sourceFps: null, fps: 12 });
+		editor.learnSourceFps(30);
+		expect(editor).toMatchObject({ sourceFps: 30, fps: 15, even: true });
+
+		editor.setMedia(media);
+		editor.fps = 12;
+		editor.learnSourceFps(30);
+		expect(editor).toMatchObject({ sourceFps: 30, fps: 12, even: false });
+
+		// The same rate chosen again is still chosen.
+		editor.setMedia(media);
+		editor.fps = 12;
+		editor.learnSourceFps(25);
+		expect(editor.fps).toBe(12);
+
+		// A rate that could not be learned changes nothing.
+		editor.setMedia(media);
+		editor.learnSourceFps(null);
+		expect(editor).toMatchObject({ sourceFps: null, fps: 12, even: true });
+	});
+
+	it('leaves the rate a render took as it is when the video’s rate comes in', async () => {
+		const { editor } = setup();
+		editor.range = { start: 0, end: 0.5 };
+		let release = () => {};
+		const hold = new Promise<void>((resolve) => (release = resolve));
+		const rendering = editor.render(fakeSource({ hold }));
+		editor.learnSourceFps(30);
+		expect(editor).toMatchObject({ sourceFps: 30, fps: 12 });
+		release();
+		await rendering;
+		expect(editor.result?.frames).toBe(6);
+		editor.learnSourceFps(30);
+		expect(editor.fps).toBe(12);
+	});
+
 	it("learns where the video's pictures are before taking any", async () => {
 		const { editor } = setup();
 		editor.range = { start: 0.5, end: 1 };

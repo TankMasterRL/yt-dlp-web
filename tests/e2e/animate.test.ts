@@ -513,6 +513,9 @@ test.describe('the frame timeline', () => {
 			expect(Math.abs(x + width - (await center(end)))).toBeLessThanOrEqual(1);
 		};
 		await expect(dialog.getByLabel('Frame rate')).toHaveValue('12');
+		// The clip's own rate, learned in a video of its own while the editor was already open.
+		await expect(dialog.getByText('Video 12 fps')).toBeVisible();
+		await expect(dialog.locator('[data-measuring]')).toHaveCount(0);
 		await expectMarksOfRange(24);
 		for (let i = 0; i < 5; i++) await start.press('ArrowRight');
 		await expectMarksOfRange(18);

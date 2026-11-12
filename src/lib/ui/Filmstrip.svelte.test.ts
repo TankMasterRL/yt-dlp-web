@@ -95,6 +95,21 @@ describe('Filmstrip', () => {
 		expect(video.seeks).toEqual([0.333333, 1, 1.666667]);
 	});
 
+	it('shows where pictures are still coming, until every one is drawn', async () => {
+		const { strip, video } = setup();
+		video.answers = false;
+		resizeAll(320, 44);
+		flushSync();
+		expect(strip).toHaveClass('taking');
+		await vi.waitFor(() => expect(video.seeks).toHaveLength(1));
+		expect(strip).toHaveClass('taking');
+		// The stuck seek ends; the rest answer.
+		video.answers = true;
+		video.dispatchEvent(new Event('seeked'));
+		await drawn(strip, 5);
+		expect(strip).not.toHaveClass('taking');
+	});
+
 	it('takes them again, sharper, when it grows taller', async () => {
 		const { strip, canvases, video } = setup();
 		resizeAll(320, 44);

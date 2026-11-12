@@ -10,6 +10,7 @@
 	import AnimationDialog from '$lib/ui/AnimationDialog.svelte';
 	import PlayerDialog from '$lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '$lib/ui/save';
+	import Spinner from '$lib/ui/Spinner.svelte';
 
 	const endpoints = appEndpoints();
 	const library = getLibrary(endpoints);
@@ -29,8 +30,8 @@
 	/** Whether this browser lets the app keep files (OPFS); null until asked. */
 	let canStore = $state<boolean | null>(null);
 	let importErrors = $state<string[]>([]);
-	/** The picked file the browser is opening, before it is imported. */
-	let opening = $state<string | null>(null);
+	/** The picked file the browser is opening, before it is imported, and how far through the picked files. */
+	let opening = $state<{ name: string; index: number; count: number } | null>(null);
 	let importInput: HTMLInputElement;
 	let animateInput: HTMLInputElement;
 	let confirmDelete = $state<string | null>(null);
@@ -111,8 +112,8 @@
 		// Picking the same file again must fire `change` again.
 		importInput.value = '';
 		importErrors = [];
-		for (const file of files) {
-			opening = file.name;
+		for (const [index, file] of files.entries()) {
+			opening = { name: file.name, index, count: files.length };
 			try {
 				await library.importFile(file);
 			} catch (e) {
@@ -153,7 +154,9 @@
 </p>
 
 <section class="storage" aria-label="Storage">
-	{#if library.loaded}
+	{#if !library.loaded}
+		<span class="reading" role="status"><Spinner />Reading the library…</span>
+	{:else}
 		{#if room !== null}
 			<meter min="0" max={used + room || 1} value={used} aria-label="Storage the library uses"
 			></meter>
@@ -209,7 +212,13 @@
 			nothing can be imported. A video can still be animated straight from your disk.
 		</p>
 	{/if}
-	{#if opening}<p class="hint" role="status">Opening {opening}…</p>{/if}
+	{#if opening}
+		<p class="hint" role="status">
+			<Spinner />Opening {opening.name}{opening.count > 1
+				? ` (${opening.index + 1} of ${opening.count})`
+				: ''}…
+		</p>
+	{/if}
 	{#each importErrors as error, i (i)}<p class="error" role="alert">{error}</p>{/each}
 </section>
 
@@ -237,7 +246,7 @@
 			<li>
 				<article aria-labelledby="title-{item.id}" data-status={item.status}>
 					<div class="thumb" aria-hidden="true">
-						{#if thumb}<img src={thumb} alt="" />{:else}<span
+						{#if thumb}<img src={thumb} alt="" decoding="async" />{:else}<span
 								>{item.kind === 'audio' ? '♪' : '▶'}</span
 							>{/if}
 					</div>
@@ -264,7 +273,7 @@
 							{:else if item.status === 'complete'}
 								<span>{formatBytes(item.bytesTotal ?? item.bytesDone)}</span>
 							{:else if item.status === 'merging'}
-								<span>Merging video and audio…</span>
+								<span><Spinner />Merging video and audio…</span>
 							{:else if item.status === 'failed'}
 								<span class="error">{item.error}</span>
 							{:else}
@@ -377,6 +386,18 @@
 
 	.persisted {
 		color: var(--ok);
+	}
+
+	/* Seen only if reading takes a moment: a quick read shows nothing to flicker. */
+	.reading {
+		color: var(--muted);
+		animation: after-a-moment 0s 0.3s backwards;
+	}
+
+	@keyframes after-a-moment {
+		from {
+			visibility: hidden;
+		}
 	}
 
 	.device {

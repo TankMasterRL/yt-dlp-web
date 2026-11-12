@@ -46,6 +46,8 @@ export class ExtractSession {
 	 */
 	relay = $state<RelayProbe | null>(null);
 	busy = $state(false);
+	/** What was typed into the URL field: kept with the result it led to. */
+	input = $state('');
 	inputError = $state<string | null>(null);
 	log = $state<LogLine[]>([]);
 	result = $state<ExtractResult | null>(null);

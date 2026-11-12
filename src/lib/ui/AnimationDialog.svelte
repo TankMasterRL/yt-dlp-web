@@ -1,3 +1,19 @@
+<script module lang="ts">
+	import { workerFormats, type FormatSupport } from '$lib/animate/client';
+
+	/** Which formats this browser can make holds while the page is open: asked once, not per video. */
+	let formats: Promise<FormatSupport> | undefined;
+
+	function knownFormats(): Promise<FormatSupport> {
+		formats ??= workerFormats().catch((e: Error) => {
+			// Asked again next time: a worker that failed once may not fail twice.
+			formats = undefined;
+			throw e;
+		});
+		return formats;
+	}
+</script>
+
 <script lang="ts">
 	import {
 		FPS_CHOICES,
@@ -9,16 +25,23 @@
 		formatFps,
 		fullFrame
 	} from '$lib/animate/clip';
-	import { workerEncoder, workerFormats, type FormatSupport } from '$lib/animate/client';
+	import { workerEncoder } from '$lib/animate/client';
 	import { AnimationEditor } from '$lib/animate/editor.svelte';
 	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '$lib/animate/formats';
-	import { learnGrid, seek, videoFrames, videoMetadata } from '$lib/animate/frames';
+	import {
+		learnGrid,
+		mediaMetadata,
+		openVideo,
+		videoFrames,
+		videoMetadata
+	} from '$lib/animate/frames';
 	import { frameRate } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
 	import Filmstrip from './Filmstrip.svelte';
 	import RangeSlider from './RangeSlider.svelte';
 	import { saveFile } from './save';
+	import Spinner from './Spinner.svelte';
 
 	interface Props {
 		/** The video: from the library's private storage, or a file opened straight from disk. */
@@ -34,6 +57,10 @@
 	let dialog: HTMLDialogElement;
 	let video: HTMLVideoElement;
 	let loadError = $state<string | null>(null);
+	/** Whether the stage shows the video's picture yet (until then it says the video is opening). */
+	let pictured = $state(false);
+	/** Whether the video's own frame rate is being learned: the editor works meanwhile. */
+	let measuring = $state(false);
 	/** Where the video is, shown on the time range. */
 	let playhead = $state(0);
 	let previewing = $state(false);
@@ -55,7 +82,7 @@
 	/** Whether the worker has said which formats it can make (for tests, as data-formats). */
 	let asked = $state<'asking' | 'known' | 'unknown'>('asking');
 
-	workerFormats().then(
+	knownFormats().then(
 		(formats) => {
 			support = formats;
 			asked = 'known';
@@ -65,16 +92,24 @@
 		() => (asked = 'unknown')
 	);
 
-	// The video plays from a blob: URL over the file (CSP media-src blob:).
+	// The video plays from a blob: URL over the file (CSP media-src blob:). The editor opens
+	// as soon as the video's size and length are known; its frame rate is learned alongside.
 	$effect(() => {
 		const url = URL.createObjectURL(file);
 		const opening = new AbortController();
 		video.src = url;
 		dialog.showModal();
 		videoMetadata(video)
-			.then(async (media) =>
-				editor.setMedia(media, await sourceFps(media.duration, opening.signal))
-			)
+			.then((media) => {
+				if (opening.signal.aborted) return;
+				editor.setMedia(media);
+				measuring = true;
+				void sourceFps(media.duration, opening.signal).then((fps) => {
+					if (opening.signal.aborted) return;
+					editor.learnSourceFps(fps);
+					measuring = false;
+				});
+			})
 			.catch((e: Error) => {
 				if (!opening.signal.aborted) loadError = e.message;
 			});
@@ -91,9 +126,12 @@
 
 	/**
 	 * The video's own frame rate, from moments of its first seconds playing (enough to
-	 * tell 29.97 fps from 30); null when the browser can't tell, or not soon.
+	 * tell 29.97 fps from 30); null when the browser can't tell, or not soon. Played in
+	 * a <video> of its own, never the dialog's: meanwhile that one shows the range's
+	 * edges as they are scrubbed, previews, and takes the animation's frames.
 	 */
 	async function sourceFps(duration: number, signal: AbortSignal): Promise<number | null> {
+		const opened = openVideo(file);
 		const looking = new AbortController();
 		const stop = () => looking.abort(signal.reason);
 		signal.addEventListener('abort', stop);
@@ -101,17 +139,18 @@
 			() => looking.abort(new DOMException('', 'TimeoutError')),
 			RATE_TIMEOUT_MS
 		);
-		let grid = null;
 		try {
-			grid = await learnGrid(video, { start: 0, end: Math.min(duration, 4) }, looking.signal);
-		} catch (e) {
-			if (signal.aborted) throw e;
+			await mediaMetadata(opened.video, looking.signal);
+			const range = { start: 0, end: Math.min(duration, 4) };
+			const grid = await learnGrid(opened.video, range, looking.signal);
+			return grid && frameRate(grid);
+		} catch {
+			return null;
 		} finally {
 			clearTimeout(timer);
 			signal.removeEventListener('abort', stop);
+			opened.close();
 		}
-		await seek(video, 0, signal);
-		return grid && frameRate(grid);
 	}
 
 	// The finished file, shown from a blob: URL (CSP img-src blob:).
@@ -194,9 +233,13 @@
 					muted
 					playsinline
 					preload="auto"
+					onloadeddata={() => (pictured = true)}
 					onseeked={() => (playhead = video.currentTime)}
 					ontimeupdate={() => (playhead = video.currentTime)}
 				></video>
+				{#if !pictured}
+					<p class="opening" role="status"><Spinner />Opening the video…</p>
+				{/if}
 				{#if editor.media}
 					<CropBox bind:crop={editor.crop} bounds={editor.media} disabled={editor.rendering} />
 				{/if}
@@ -220,6 +263,8 @@
 					<span>Crop <strong>{editor.crop.width} × {editor.crop.height}</strong></span>
 					{#if editor.sourceFps}
 						<span>Video <strong>{formatFps(editor.sourceFps)} fps</strong></span>
+					{:else if measuring}
+						<span data-measuring><Spinner />Measuring the video's frame rate…</span>
 					{/if}
 				</p>
 				<div class="view-actions">
@@ -308,6 +353,7 @@
 						)} of the video"
 						width={result.width}
 						height={result.height}
+						decoding="async"
 						onerror={() => (unshowable = true)}
 					/>
 				{/if}
@@ -449,6 +495,19 @@
 		width: 100%;
 		height: 100%;
 		display: block;
+	}
+
+	/* Over the black stage until the first picture is in: the video is on its way. */
+	.opening {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin: 0;
+		color: #fff;
+		font-size: 0.9rem;
+		pointer-events: none;
 	}
 
 	.settings {

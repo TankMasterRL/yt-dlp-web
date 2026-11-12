@@ -60,6 +60,7 @@
 
 <div
 	class="filmstrip"
+	class:taking={taken < times.length}
 	bind:this={element}
 	data-taken={taken}
 	{@attach observeSize((box) => (strip = box))}
@@ -76,8 +77,43 @@
 		display: flex;
 	}
 
+	/*
+	 * Behind the pictures, while some are still coming: a slow pulse where each one
+	 * will be (a canvas is clear until drawn on). Opacity alone, which the compositor
+	 * animates without the page's thread.
+	 */
+	.filmstrip::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: var(--surface-2);
+		opacity: 0;
+	}
+
+	.filmstrip.taking::before {
+		animation: coming 1.1s ease-in-out infinite alternate;
+	}
+
+	@keyframes coming {
+		from {
+			opacity: 0.15;
+		}
+		to {
+			opacity: 0.6;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.filmstrip.taking::before {
+			animation: none;
+			opacity: 0.4;
+		}
+	}
+
 	/* Side by side across the whole strip; a picture cut short shows its middle. */
 	canvas {
+		/* Positioned, so it stands over the placeholder before it. */
+		position: relative;
 		flex: 1 1 0;
 		min-width: 0;
 		height: 100%;

@@ -77,6 +77,44 @@ describe('workerRemuxer', () => {
 		expect(spawned[0].terminated).toBe(true);
 	});
 
+	it('starts loading ffmpeg ahead of a merge, which then uses that worker', async () => {
+		const loaded = vi.fn();
+		const work = vi.fn(async () => ({ bytesTotal: 5 }));
+		const { spawn, spawned } = fakeWorkers(() => ({ load: async () => loaded(), work }));
+		const remuxer = workerRemuxer('https://app.test/', { spawn, fetch: noFetch });
+		const release = remuxer.prepare!();
+		await vi.waitFor(() => expect(loaded).toHaveBeenCalledOnce());
+		expect(spawned).toEqual([{ loads: [{ assetsBase: 'https://app.test/' }], terminated: false }]);
+
+		expect(await remuxer.merge(request)).toEqual({ bytesTotal: 5 });
+		// Still held for whoever prepared it.
+		expect(spawned).toHaveLength(1);
+		expect(spawned[0].terminated).toBe(false);
+		release();
+		expect(spawned[0].terminated).toBe(true);
+		// Releasing twice lets go of nothing more.
+		release();
+		const again = remuxer.prepare!();
+		expect(spawned).toHaveLength(2);
+		again();
+		expect(spawned[1].terminated).toBe(true);
+	});
+
+	it('stops a worker prepared for a merge that never comes', async () => {
+		const { spawn, spawned } = fakeWorkers(() => ({
+			load: async () => {},
+			work: async () => ({ bytesTotal: 1 })
+		}));
+		const remuxer = workerRemuxer('https://app.test/', { spawn, fetch: noFetch });
+		const first = remuxer.prepare!();
+		const second = remuxer.prepare!();
+		expect(spawned).toHaveLength(1);
+		first();
+		expect(spawned[0].terminated).toBe(false);
+		second();
+		expect(spawned[0].terminated).toBe(true);
+	});
+
 	it('fails the merge when ffmpeg cannot load, and tries afresh next time', async () => {
 		let attempt = 0;
 		const { spawn, spawned } = fakeWorkers(() => {

@@ -62,7 +62,7 @@ export class AnimationEditor {
 	sourceFps = $state<number | null>(null);
 	range = $state<TimeRange>({ start: 0, end: DEFAULT_SPAN });
 	crop = $state<Rect>({ x: 0, y: 0, width: 0, height: 0 });
-	fps = $state(DEFAULT_FPS);
+	#fps = $state(DEFAULT_FPS);
 	width = $state(DEFAULT_WIDTH);
 	format = $state<AnimationFormat>('gif');
 	/** For lossy formats. */
@@ -80,6 +80,11 @@ export class AnimationEditor {
 	readonly even = $derived(this.sourceFps === null || evenRates(this.sourceFps).includes(this.fps));
 
 	#spawn: SpawnEncoder;
+	/**
+	 * Whether the frame rate is settled — chosen, or taken by a render — so that
+	 * the video's own rate, learned after the editor opened, leaves it be.
+	 */
+	#fpsSettled = false;
 	#controller: AbortController | null = null;
 	#encoder: AnimationEncoder | null = null;
 
@@ -87,15 +92,39 @@ export class AnimationEditor {
 		this.#spawn = spawn;
 	}
 
-	/** A video to work on: the first seconds of all of its picture, at a rate that suits its own. */
+	/** Frames a second in the animation. */
+	get fps(): number {
+		return this.#fps;
+	}
+
+	set fps(fps: number) {
+		this.#fps = fps;
+		this.#fpsSettled = true;
+	}
+
+	/**
+	 * A video to work on: the first seconds of all of its picture, at a rate that
+	 * suits its own — known now, or learned later (`learnSourceFps`).
+	 */
 	setMedia(media: VideoMetadata, sourceFps: number | null = null): void {
 		this.media = media;
 		this.sourceFps = sourceFps;
-		this.fps = suggestedFps(sourceFps);
+		this.#fps = suggestedFps(sourceFps);
+		this.#fpsSettled = false;
 		this.range = defaultRange(media.duration);
 		this.crop = fullFrame(media);
 		this.result = null;
 		this.error = null;
+	}
+
+	/**
+	 * The video's own rate, learned once the editor is open (null: it could not
+	 * be told). The animation's rate becomes one that suits it, unless a rate
+	 * was chosen or rendered meanwhile.
+	 */
+	learnSourceFps(sourceFps: number | null): void {
+		this.sourceFps = sourceFps;
+		if (!this.#fpsSettled) this.#fps = suggestedFps(sourceFps);
 	}
 
 	/**
@@ -110,6 +139,7 @@ export class AnimationEditor {
 		const crop = { ...this.crop };
 		const size = { ...this.size };
 		const { format, fps, quality } = this;
+		this.#fpsSettled = true;
 		const times = frameTimes(range, fps);
 		const controller = new AbortController();
 		const encoder = this.#spawn();
