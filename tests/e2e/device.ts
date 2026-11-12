@@ -75,7 +75,11 @@ const GIF_NAME = /^bbf-360[ _]\(0\.0s-2\.0s\)\.gif$/;
 /** The whole 2 s clip, 480 px wide, looping. */
 function expectWholeClip(gif: DecodedGif): void {
 	expect(gif).toMatchObject({ width: 480, height: 270, loop: 0 });
-	expect(gif.frames.length).toBeGreaterThan(1);
+	// At the clip's own 12 fps, each of its 24 numbered pictures once: a picture taken
+	// twice would fold into one GIF frame (it changes nothing), so any doubled or lost
+	// picture shows as fewer. Taken at the times frames fall on, every few were doubled:
+	// WebM rounds when pictures start to the millisecond (frame 2 at 167 ms, after 2/12 s).
+	expect(gif.frames).toHaveLength(24);
 	expect(gif.frames.reduce((sum, frame) => sum + frame.delay, 0)).toBe(200);
 }
 

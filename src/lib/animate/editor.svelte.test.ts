@@ -205,6 +205,36 @@ describe('AnimationEditor', () => {
 		expect(encoders).toHaveLength(0);
 	});
 
+	it("starts at an even step of the video's rate, when it is known", () => {
+		const { editor } = setup();
+		editor.setMedia(media, 30);
+		expect(editor.sourceFps).toBe(30);
+		expect(editor.fps).toBe(15);
+		expect(editor.even).toBe(true);
+		editor.fps = 12;
+		expect(editor.even).toBe(false);
+		editor.setMedia(media);
+		expect(editor).toMatchObject({ sourceFps: null, fps: 12, even: true });
+	});
+
+	it("learns where the video's pictures are before taking any", async () => {
+		const { editor } = setup();
+		editor.range = { start: 0.5, end: 1 };
+		const calls: string[] = [];
+		const source = fakeSource();
+		await editor.render({
+			async prepare(range) {
+				calls.push(`prepare ${range.start}-${range.end}`);
+			},
+			async frameAt(...args) {
+				calls.push('frame');
+				return source.frameAt(...args);
+			}
+		});
+		expect(calls[0]).toBe('prepare 0.5-1');
+		expect(calls.slice(1)).toEqual(Array(editor.frameCount).fill('frame'));
+	});
+
 	it('starts afresh for another video', () => {
 		const { editor } = setup();
 		editor.range = { start: 3, end: 4 };

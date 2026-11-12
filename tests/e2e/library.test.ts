@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { formatBytes } from '../../src/lib/formats';
 import { expect, test } from './fixtures';
 import {
 	ENGINE_BOOT_MS,
@@ -43,6 +44,9 @@ test.describe('download → library → play → export → delete', () => {
 		const card = page.getByRole('article', { name: /^Big Buck Fixture/ });
 		await expect(card).toHaveAttribute('data-status', 'complete');
 		expect(await opfsFiles(page)).toHaveLength(1);
+		// The meter counts the library's own bytes, not everything the origin stores.
+		const storage = page.getByRole('region', { name: 'Storage' });
+		await expect(storage).toContainText(`${formatBytes(FIXTURE.length)} in your library`);
 
 		// It plays: the browser decodes the stored bytes.
 		await card.getByRole('button', { name: /^Play / }).click();
@@ -76,6 +80,7 @@ test.describe('download → library → play → export → delete', () => {
 		await expect(page.getByRole('article')).toHaveCount(0);
 		await expect(page.getByText('Nothing here yet.')).toBeVisible();
 		expect(await opfsFiles(page)).toEqual([]);
+		await expect(storage).toContainText('0 B in your library');
 
 		expect(await violations()).toEqual([]);
 	});

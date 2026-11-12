@@ -4,13 +4,16 @@
 		MAX_FRAMES,
 		WIDTH_CHOICES,
 		animationFileName,
+		evenRates,
 		formatClipTime,
+		formatFps,
 		fullFrame
 	} from '$lib/animate/clip';
 	import { workerEncoder, workerFormats, type FormatSupport } from '$lib/animate/client';
 	import { AnimationEditor } from '$lib/animate/editor.svelte';
 	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '$lib/animate/formats';
-	import { videoFrames, videoMetadata } from '$lib/animate/frames';
+	import { learnGrid, seek, videoFrames, videoMetadata } from '$lib/animate/frames';
+	import { frameRate } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
 	import RangeSlider from './RangeSlider.svelte';
@@ -40,6 +43,13 @@
 	let support = $state<FormatSupport | null>(null);
 	let frameRequest = 0;
 	const spec = $derived(FORMATS[editor.format]);
+	/** The rates that step evenly through the video's pictures, as a phrase: '5, 10, 15 or 30'. */
+	const smoothRates = $derived.by(() => {
+		const rates = editor.sourceFps ? evenRates(editor.sourceFps) : [];
+		return rates.length > 1
+			? `${rates.slice(0, -1).join(', ')} or ${rates.at(-1)}`
+			: rates.join('');
+	});
 
 	/** Whether the worker has said which formats it can make (for tests, as data-formats). */
 	let asked = $state<'asking' | 'known' | 'unknown'>('asking');
@@ -57,18 +67,51 @@
 	// The video plays from a blob: URL over the file (CSP media-src blob:).
 	$effect(() => {
 		const url = URL.createObjectURL(file);
+		const opening = new AbortController();
 		video.src = url;
 		dialog.showModal();
-		videoMetadata(video).then(
-			(media) => editor.setMedia(media),
-			(e: Error) => (loadError = e.message)
-		);
+		videoMetadata(video)
+			.then(async (media) =>
+				editor.setMedia(media, await sourceFps(media.duration, opening.signal))
+			)
+			.catch((e: Error) => {
+				if (!opening.signal.aborted) loadError = e.message;
+			});
 		return () => {
+			opening.abort();
 			stopPreview();
 			editor.cancel();
 			URL.revokeObjectURL(url);
 		};
 	});
+
+	/** How long the dialog waits to learn the video's frame rate before going on without it. */
+	const RATE_TIMEOUT_MS = 4000;
+
+	/**
+	 * The video's own frame rate, from moments of its first seconds playing (enough to
+	 * tell 29.97 fps from 30); null when the browser can't tell, or not soon.
+	 */
+	async function sourceFps(duration: number, signal: AbortSignal): Promise<number | null> {
+		const looking = new AbortController();
+		const stop = () => looking.abort(signal.reason);
+		signal.addEventListener('abort', stop);
+		const timer = setTimeout(
+			() => looking.abort(new DOMException('', 'TimeoutError')),
+			RATE_TIMEOUT_MS
+		);
+		let grid = null;
+		try {
+			grid = await learnGrid(video, { start: 0, end: Math.min(duration, 4) }, looking.signal);
+		} catch (e) {
+			if (signal.aborted) throw e;
+		} finally {
+			clearTimeout(timer);
+			signal.removeEventListener('abort', stop);
+		}
+		await seek(video, 0, signal);
+		return grid && frameRate(grid);
+	}
 
 	// The finished file, shown from a blob: URL (CSP img-src blob:).
 	$effect(() => {
@@ -135,89 +178,149 @@
 		>
 	</header>
 
-	{#if loadError}
-		<p class="error" role="alert">{loadError}</p>
-	{/if}
-	<div
-		class="stage"
-		class:hidden={loadError}
-		style:--aspect={editor.media ? editor.media.width / editor.media.height : 16 / 9}
-	>
-		<!-- svelte-ignore a11y_media_has_caption -->
-		<video
-			bind:this={video}
-			muted
-			playsinline
-			preload="auto"
-			onseeked={() => (playhead = video.currentTime)}
-			ontimeupdate={() => (playhead = video.currentTime)}
-		></video>
+	<div class="body">
+		{#if loadError}
+			<p class="error" role="alert">{loadError}</p>
+		{/if}
+		<div class="view" class:hidden={loadError}>
+			<div
+				class="stage"
+				style:--aspect={editor.media ? editor.media.width / editor.media.height : 16 / 9}
+			>
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<video
+					bind:this={video}
+					muted
+					playsinline
+					preload="auto"
+					onseeked={() => (playhead = video.currentTime)}
+					ontimeupdate={() => (playhead = video.currentTime)}
+				></video>
+				{#if editor.media}
+					<CropBox bind:crop={editor.crop} bounds={editor.media} disabled={editor.rendering} />
+				{/if}
+			</div>
+			{#if editor.media}
+				<RangeSlider
+					bind:range={editor.range}
+					duration={editor.media.duration}
+					{playhead}
+					disabled={editor.rendering}
+					onscrub={show}
+				/>
+				<p class="readout" aria-live="polite">
+					<span>Start <strong>{formatClipTime(editor.range.start)}</strong></span>
+					<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
+					<span>Length <strong>{(editor.range.end - editor.range.start).toFixed(1)} s</strong></span
+					>
+					<span>Crop <strong>{editor.crop.width} × {editor.crop.height}</strong></span>
+					{#if editor.sourceFps}
+						<span>Video <strong>{formatFps(editor.sourceFps)} fps</strong></span>
+					{/if}
+				</p>
+				<div class="view-actions">
+					<button
+						type="button"
+						onclick={() => (previewing ? stopPreview() : startPreview())}
+						disabled={editor.rendering}>{previewing ? 'Stop preview' : 'Preview'}</button
+					>
+					<button
+						type="button"
+						onclick={() => (editor.crop = fullFrame(editor.media!))}
+						disabled={editor.rendering}>Reset crop</button
+					>
+				</div>
+			{/if}
+		</div>
+
 		{#if editor.media}
-			<CropBox bind:crop={editor.crop} bounds={editor.media} disabled={editor.rendering} />
+			<section class="settings" aria-label="Animation settings">
+				<div class="options">
+					<label>
+						Format
+						<select bind:value={editor.format} disabled={editor.rendering} data-formats={asked}>
+							{#each FORMAT_ORDER as format (format)}
+								<option value={format} disabled={support?.[format] === false}
+									>{FORMATS[format].label}{support?.[format] === false
+										? ' (not in this browser)'
+										: ''}</option
+								>
+							{/each}
+						</select>
+					</label>
+					{#if spec.lossy}
+						<label>
+							Quality
+							<select bind:value={editor.quality} disabled={editor.rendering}>
+								{#each QUALITY_CHOICES as quality (quality)}<option value={quality}
+										>{quality}</option
+									>{/each}
+							</select>
+						</label>
+					{/if}
+					<label>
+						Frame rate
+						<select bind:value={editor.fps} disabled={editor.rendering}>
+							{#each FPS_CHOICES as fps (fps)}<option value={fps}>{fps} fps</option>{/each}
+						</select>
+					</label>
+					<label>
+						Width
+						<select bind:value={editor.width} disabled={editor.rendering}>
+							{#each WIDTH_CHOICES as width (width)}<option value={width}>{width} px</option>{/each}
+						</select>
+					</label>
+				</div>
+				<p class="format-note">{spec.label}: {spec.note}</p>
+				{#if !editor.even && editor.sourceFps}
+					<p class="format-note" data-uneven>
+						{editor.fps} fps doesn't step evenly through this video's {formatFps(editor.sourceFps)} fps,
+						so motion judders.{smoothRates ? ` Smooth: ${smoothRates} fps.` : ''}
+					</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if editor.result && resultUrl}
+			{@const result = editor.result}
+			{@const label = FORMATS[result.format].label}
+			<!-- It appears below the settings: bring it into view. -->
+			<section
+				class="result"
+				aria-labelledby="result-title"
+				{@attach (node) => node.scrollIntoView({ block: 'nearest' })}
+			>
+				<h3 id="result-title">Your {label}</h3>
+				{#if unshowable}
+					<p class="note" data-unshowable>
+						This browser can't show {label} images. The file is fine: save it, and open it with a browser
+						or viewer that can.
+					</p>
+				{:else}
+					<img
+						src={resultUrl}
+						alt="The animated {label}: {formatClipTime(result.range.start)} to {formatClipTime(
+							result.range.end
+						)} of the video"
+						width={result.width}
+						height={result.height}
+						onerror={() => (unshowable = true)}
+					/>
+				{/if}
+				<p>
+					{result.width} × {result.height} px · {result.frames} frames · {result.duration.toFixed(
+						1
+					)}
+					s · {formatBytes(result.blob.size)}
+				</p>
+				<button type="button" class="primary" onclick={save}>Save {label}</button>
+			</section>
 		{/if}
 	</div>
 
 	{#if editor.media}
-		<section class="settings" aria-label="Animation settings">
-			<RangeSlider
-				bind:range={editor.range}
-				duration={editor.media.duration}
-				{playhead}
-				disabled={editor.rendering}
-				onscrub={show}
-			/>
-			<p class="readout" aria-live="polite">
-				<span>Start <strong>{formatClipTime(editor.range.start)}</strong></span>
-				<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
-				<span>Length <strong>{(editor.range.end - editor.range.start).toFixed(1)} s</strong></span>
-				<span>Crop <strong>{editor.crop.width} × {editor.crop.height}</strong></span>
-			</p>
-			<div class="options">
-				<label>
-					Format
-					<select bind:value={editor.format} disabled={editor.rendering} data-formats={asked}>
-						{#each FORMAT_ORDER as format (format)}
-							<option value={format} disabled={support?.[format] === false}
-								>{FORMATS[format].label}{support?.[format] === false
-									? ' (not in this browser)'
-									: ''}</option
-							>
-						{/each}
-					</select>
-				</label>
-				{#if spec.lossy}
-					<label>
-						Quality
-						<select bind:value={editor.quality} disabled={editor.rendering}>
-							{#each QUALITY_CHOICES as quality (quality)}<option value={quality}>{quality}</option
-								>{/each}
-						</select>
-					</label>
-				{/if}
-				<label>
-					Frame rate
-					<select bind:value={editor.fps} disabled={editor.rendering}>
-						{#each FPS_CHOICES as fps (fps)}<option value={fps}>{fps} fps</option>{/each}
-					</select>
-				</label>
-				<label>
-					Width
-					<select bind:value={editor.width} disabled={editor.rendering}>
-						{#each WIDTH_CHOICES as width (width)}<option value={width}>{width} px</option>{/each}
-					</select>
-				</label>
-				<button
-					type="button"
-					onclick={() => (previewing ? stopPreview() : startPreview())}
-					disabled={editor.rendering}>{previewing ? 'Stop preview' : 'Preview'}</button
-				>
-				<button
-					type="button"
-					onclick={() => (editor.crop = fullFrame(editor.media!))}
-					disabled={editor.rendering}>Reset crop</button
-				>
-			</div>
-			<p class="format-note">{spec.label}: {spec.note}</p>
+		<!-- Always in view, however far the settings scroll. -->
+		<footer>
 			<div class="make">
 				<p id="animate-summary" class="summary">
 					{spec.label}: {editor.size.width} × {editor.size.height} px · {editor.frameCount} frames
@@ -246,65 +349,49 @@
 				</p>
 			{/if}
 			{#if editor.error}<p class="error" role="alert">{editor.error}</p>{/if}
-		</section>
-	{/if}
-
-	{#if editor.result && resultUrl}
-		{@const result = editor.result}
-		{@const label = FORMATS[result.format].label}
-		<!-- It appears below the settings: bring it into view. -->
-		<section
-			class="result"
-			aria-labelledby="result-title"
-			{@attach (node) => node.scrollIntoView({ block: 'nearest' })}
-		>
-			<h3 id="result-title">Your {label}</h3>
-			{#if unshowable}
-				<p class="note" data-unshowable>
-					This browser can't show {label} images. The file is fine: save it, and open it with a browser
-					or viewer that can.
-				</p>
-			{:else}
-				<img
-					src={resultUrl}
-					alt="The animated {label}: {formatClipTime(result.range.start)} to {formatClipTime(
-						result.range.end
-					)} of the video"
-					width={result.width}
-					height={result.height}
-					onerror={() => (unshowable = true)}
-				/>
-			{/if}
-			<p>
-				{result.width} × {result.height} px · {result.frames} frames · {result.duration.toFixed(1)} s
-				· {formatBytes(result.blob.size)}
-			</p>
-			<button type="button" class="primary" onclick={save}>Save {label}</button>
-		</section>
+		</footer>
 	{/if}
 </dialog>
 
 <style>
 	dialog {
 		width: min(56rem, calc(100vw - 2rem));
+		max-width: none;
 		max-height: calc(100vh - 2rem);
+		max-height: calc(100dvh - 2rem);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		background: var(--surface);
 		color: var(--text);
-		padding: 1rem 1.25rem 1.25rem;
+		padding: 0;
+		overflow: hidden;
+		/* The stage's height: room for the time range and settings below it. */
+		--stage-height: 42dvh;
+	}
+
+	/* Header and footer stay put; what is between them scrolls. */
+	dialog[open] {
+		display: flex;
+		flex-direction: column;
 	}
 
 	dialog::backdrop {
 		background: rgb(0 0 0 / 0.6);
 	}
 
+	header,
+	.body,
+	footer {
+		padding-inline: 1.25rem;
+	}
+
 	header {
+		flex: none;
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 1rem;
-		margin-bottom: 0.75rem;
+		padding-block: 1rem 0.75rem;
 	}
 
 	h2 {
@@ -319,17 +406,37 @@
 		overflow-wrap: anywhere;
 	}
 
+	.body {
+		flex: 1 1 auto;
+		min-height: 0;
+		/* Crop handles reach past the stage's edges: never far enough to scroll sideways for. */
+		overflow: hidden auto;
+		overscroll-behavior: contain;
+		/* Room above for the top crop handles, which stand half out of the stage. */
+		padding-block: 0.75rem 1rem;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-content: start;
+		gap: 1.25rem;
+	}
+
+	.view {
+		display: grid;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+
+	.view.hidden {
+		display: none;
+	}
+
 	/* Exactly the video's shape, so the crop's percentages are the picture's. */
 	.stage {
 		position: relative;
-		width: min(100%, calc(52vh * var(--aspect)));
+		width: min(100%, calc(var(--stage-height) * var(--aspect)));
 		aspect-ratio: var(--aspect);
 		margin: 0 auto;
 		background: #000;
-	}
-
-	.stage.hidden {
-		display: none;
 	}
 
 	video {
@@ -341,13 +448,13 @@
 	}
 
 	.settings {
-		margin-top: 1.25rem;
 		display: grid;
 		gap: 0.75rem;
+		min-width: 0;
 	}
 
 	.readout,
-	.options,
+	.view-actions,
 	.make {
 		display: flex;
 		flex-wrap: wrap;
@@ -366,17 +473,32 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	.view-actions {
+		gap: 0.5rem;
+	}
+
+	/* Label over field, as many to a row as fit. */
+	.options {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+		gap: 0.75rem;
+	}
+
 	.options label {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
+		display: grid;
+		gap: 0.3rem;
+		font-size: 0.9rem;
+		color: var(--muted);
 	}
 
 	select {
+		width: 100%;
+		min-height: 2.5rem;
 		padding: 0.4rem 0.6rem;
 		border-radius: 8px;
 		border: 1px solid var(--border);
 		background: var(--surface);
+		color: var(--text);
 	}
 
 	.format-note {
@@ -385,9 +507,23 @@
 		font-size: 0.85rem;
 	}
 
-	.summary {
+	footer {
+		flex: none;
+		display: grid;
+		gap: 0.5rem;
+		padding-block: 0.75rem;
+		/* Clear of a phone's home indicator. */
+		padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+		border-top: 1px solid var(--border);
+		background: var(--surface);
+	}
+
+	footer p {
 		margin: 0;
-		flex: 1 1 auto;
+	}
+
+	.summary {
+		flex: 1 1 12rem;
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -401,16 +537,17 @@
 	}
 
 	.error {
+		margin: 0;
 		color: var(--danger);
 	}
 
 	.result {
-		margin-top: 1.25rem;
 		padding-top: 1rem;
 		border-top: 1px solid var(--border);
 		display: grid;
 		justify-items: start;
 		gap: 0.5rem;
+		min-width: 0;
 	}
 
 	.result h3 {
@@ -430,5 +567,100 @@
 		margin: 0;
 		color: var(--muted);
 		font-size: 0.9rem;
+	}
+
+	/* Phones: the whole screen, the picture and the Create button always in reach. */
+	@media (max-width: 40rem), (max-height: 32rem) {
+		dialog {
+			width: 100%;
+			height: 100vh;
+			height: 100dvh;
+			max-height: none;
+			margin: 0;
+			border: 0;
+			border-radius: 0;
+			--stage-height: 40dvh;
+		}
+
+		header,
+		.body,
+		footer {
+			padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
+		}
+
+		header {
+			padding-block: 0.75rem 0.5rem;
+		}
+
+		.body {
+			gap: 1rem;
+		}
+
+		.view-actions button {
+			flex: 1 1 0;
+		}
+
+		.make button {
+			flex: 1 1 auto;
+		}
+
+		progress {
+			flex: 1 1 6rem;
+		}
+	}
+
+	/*
+	 * Phones on their side: the picture beside the settings, with the time range
+	 * under it in view — the header a single line, the footer a single row.
+	 */
+	@media (max-height: 32rem) and (min-aspect-ratio: 4 / 3) {
+		dialog {
+			--stage-height: calc(100dvh - 12.5rem);
+		}
+
+		header {
+			align-items: center;
+			padding-block: 0.4rem;
+		}
+
+		header > div {
+			display: flex;
+			align-items: baseline;
+			gap: 0.75rem;
+			min-width: 0;
+		}
+
+		h2 {
+			flex: none;
+		}
+
+		.source {
+			margin: 0;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		footer {
+			padding-block: 0.4rem;
+			padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
+		}
+
+		.make button {
+			flex: none;
+		}
+
+		.body {
+			grid-template-columns: minmax(0, 1.4fr) minmax(14rem, 1fr);
+			align-items: start;
+		}
+
+		.result {
+			grid-column: 1 / -1;
+		}
+
+		.options {
+			grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+		}
 	}
 </style>

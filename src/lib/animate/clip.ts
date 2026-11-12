@@ -46,6 +46,8 @@ export const MAX_FRAMES = 600;
  * under 2 cs down to 10.
  */
 export const FPS_CHOICES = [5, 10, 12, 15, 20, 25, 30] as const;
+/** What a new editor makes, unless the video's own rate suggests better. */
+export const DEFAULT_FPS = 12;
 export const WIDTH_CHOICES = [160, 240, 320, 480, 640, 800] as const;
 /** Frames the palette is built from, spread over the range. */
 export const PALETTE_SAMPLES = 16;
@@ -146,6 +148,31 @@ export function frameDelays(count: number, fps: number): number[] {
 export function sampleIndices(count: number, max: number): number[] {
 	if (count <= max) return Array.from({ length: count }, (_, i) => i);
 	return Array.from({ length: max }, (_, i) => Math.round((i * (count - 1)) / (max - 1)));
+}
+
+/**
+ * The frame rates that take a video's pictures evenly, at `sourceFps`: every
+ * frame steps the same whole number of pictures on (to within 1 %, so 15 fps
+ * of a 29.97 fps video counts). Any other rate steps some pictures further
+ * than others — 12 fps of a 30 fps video goes 2, 3, 2, 3 — and motion judders.
+ */
+export function evenRates(sourceFps: number): number[] {
+	return FPS_CHOICES.filter((fps) => {
+		const step = sourceFps / fps;
+		const whole = Math.round(step);
+		return whole >= 1 && Math.abs(step - whole) <= step / 100;
+	});
+}
+
+/** A new editor's rate: the even one of 10 to 15 fps that is smoothest, else the default. */
+export function suggestedFps(sourceFps: number | null): number {
+	const fitting = sourceFps ? evenRates(sourceFps).filter((fps) => fps >= 10 && fps <= 15) : [];
+	return fitting.at(-1) ?? DEFAULT_FPS;
+}
+
+/** 30 → '30'; 30000/1001 → '29.97'. */
+export function formatFps(fps: number): string {
+	return String(Number(fps.toFixed(2)));
 }
 
 /** The crop scaled to `width` (never up), its shape kept. */
