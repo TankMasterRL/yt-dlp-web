@@ -172,6 +172,15 @@
 		background: #fff;
 	}
 
+	/* Fingers need more than the square shows: a bigger, invisible grip around it. */
+	@media (pointer: coarse) {
+		.handle::before {
+			content: '';
+			position: absolute;
+			inset: -0.6rem;
+		}
+	}
+
 	.n,
 	.s {
 		left: 50%;

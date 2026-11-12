@@ -185,6 +185,15 @@
 		touch-action: none;
 	}
 
+	/* Fingers need more than the thumb shows: a wider, invisible grip around it. */
+	@media (pointer: coarse) {
+		.thumb::before {
+			content: '';
+			position: absolute;
+			inset: 0 -0.6rem;
+		}
+	}
+
 	/* A grip: two short lines down the middle. */
 	.thumb::after {
 		content: '';

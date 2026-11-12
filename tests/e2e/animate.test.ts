@@ -23,11 +23,15 @@ async function reference() {
 	return (ffmpeg ??= oracle(await loadFFmpegCore()));
 }
 
-/** The fixture's frames as FFmpeg decodes them, cropped to the top left. */
+/**
+ * The fixture's frames as FFmpeg decodes them, cropped to the top left — to the
+ * pixel (`exact`): otherwise FFmpeg rounds an odd crop of 4:2:0 video down to
+ * even, and a drag can end on an odd size.
+ */
 async function fixtureFrames(width: number, height: number): Promise<Uint8ClampedArray[]> {
 	const ff = await reference();
 	return ff.withFile('clip.webm', FIXTURE, (path) =>
-		ff.rawFrames(['-i', path, '-vf', `crop=${width}:${height}:0:0`], width, height)
+		ff.rawFrames(['-i', path, '-vf', `crop=${width}:${height}:0:0:exact=1`], width, height)
 	);
 }
 
