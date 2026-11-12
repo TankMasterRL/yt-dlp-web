@@ -119,7 +119,10 @@ While it runs, it holds a **Web Lock** named after the item:
 A BroadcastChannel keeps every open tab's library in step. The library keeps its metadata in
 IndexedDB: title, format, size, status, and the thumbnail as a Blob fetched through the relay. It
 plays files from `blob:` URLs, saves them with `showSaveFilePicker()` (or a plain download), and
-shows how much storage is used.
+shows how much storage it uses: the bytes of its own items (each file as far as written, live while
+it runs, and its thumbnail), counted from the library itself (`libraryBytes`). The browser's
+`navigator.storage.estimate()` covers the whole origin — every app served from the same address,
+such as `localhost` or a `github.io` account — so it only says how much more fits.
 
 ### Importing from the device
 

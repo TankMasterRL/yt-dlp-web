@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { exportFileName, progressLabel, statusLabel } from './present';
+import type { LibraryItem } from './db';
+import { exportFileName, libraryBytes, progressLabel, statusLabel } from './present';
 
 describe('exportFileName', () => {
 	it('builds "<title> [<format>].<ext>"', () => {
@@ -53,5 +54,45 @@ describe('progress', () => {
 		expect(statusLabel('complete', 'import')).toBe('Imported');
 		expect(statusLabel('complete', 'download')).toBe('Downloaded');
 		expect(statusLabel('failed', 'import')).toBe('Failed');
+	});
+});
+
+describe('libraryBytes', () => {
+	const item = (fields: Partial<LibraryItem>): LibraryItem =>
+		({
+			id: 'x',
+			title: 'x',
+			ext: 'webm',
+			fileName: 'x.webm',
+			bytesTotal: null,
+			bytesDone: 0,
+			status: 'complete',
+			createdAt: 0,
+			...fields
+		}) as LibraryItem;
+
+	it("counts what the library's own items hold: their files and thumbnails", () => {
+		const items = [
+			item({ id: 'a', status: 'complete', bytesTotal: 1000, bytesDone: 1000 }),
+			item({ id: 'b', status: 'paused', bytesTotal: 5000, bytesDone: 300 }),
+			item({ id: 'c', status: 'failed', bytesTotal: null, bytesDone: 20 }),
+			item({
+				id: 'd',
+				status: 'complete',
+				bytesTotal: 7,
+				bytesDone: 7,
+				thumbnail: new Blob(['jpeg'])
+			})
+		];
+		expect(libraryBytes(items, {})).toBe(1000 + 300 + 20 + 7 + 4);
+	});
+
+	it('follows downloads and imports as they run', () => {
+		const items = [item({ id: 'a', status: 'downloading', bytesTotal: 5000, bytesDone: 100 })];
+		expect(libraryBytes(items, { a: { bytesDone: 2500, bytesTotal: 5000 } })).toBe(2500);
+	});
+
+	it('is nothing for an empty library', () => {
+		expect(libraryBytes([], {})).toBe(0);
 	});
 });

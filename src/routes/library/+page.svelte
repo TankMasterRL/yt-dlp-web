@@ -6,7 +6,7 @@
 	import type { LibraryItem } from '$lib/storage/db';
 	import { importedTitle } from '$lib/storage/imported';
 	import { getLibrary, opfsAvailable } from '$lib/storage/instance';
-	import { exportFileName, progressLabel, statusLabel } from '$lib/storage/present';
+	import { exportFileName, libraryBytes, progressLabel, statusLabel } from '$lib/storage/present';
 	import AnimationDialog from '$lib/ui/AnimationDialog.svelte';
 	import PlayerDialog from '$lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '$lib/ui/save';
@@ -20,7 +20,8 @@
 	type Sort = 'newest' | 'oldest' | 'title' | 'size';
 	let query = $state('');
 	let sort = $state<Sort>('newest');
-	let storage = $state<{ usage: number; quota: number } | null>(null);
+	/** How much more the browser lets this site store; null where it won't say. */
+	let room = $state<number | null>(null);
 	let persisted = $state<boolean | null>(null);
 	let playing = $state<{ item: LibraryItem; file: File } | null>(null);
 	/** The video in the animation maker: a library item's, or a file opened straight from disk. */
@@ -42,7 +43,9 @@
 		return () => thumbnails.forEach((url) => URL.revokeObjectURL(url));
 	});
 
-	// The storage meter follows the library: it is read again whenever an item comes, goes or
+	/** What the library itself keeps here: its files, as far as written, and thumbnails. */
+	const used = $derived(libraryBytes(library.items, library.live));
+	// The room left follows the library: it is read again whenever an item comes, goes or
 	// changes status (not on every progress report).
 	const shape = $derived(library.items.map((i) => `${i.id}:${i.status}`).join());
 	$effect(() => {
@@ -64,11 +67,16 @@
 		return [...matches].sort(by[sort]);
 	});
 
+	/**
+	 * The browser's estimate covers the whole origin — anything else served from the same
+	 * address (localhost, a github.io account) — so it only says how much more fits; what
+	 * the library holds is counted from the library itself.
+	 */
 	async function refreshStorage() {
 		// Some engines and private windows offer no storage manager at all.
 		if (!navigator.storage) return;
-		const estimate = await navigator.storage.estimate();
-		storage = { usage: estimate.usage ?? 0, quota: estimate.quota ?? 0 };
+		const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+		room = quota ? Math.max(0, quota - usage) : null;
 		persisted = await navigator.storage.persisted();
 	}
 
@@ -145,9 +153,16 @@
 </p>
 
 <section class="storage" aria-label="Storage">
-	{#if storage}
-		<meter min="0" max={storage.quota || 1} value={storage.usage} aria-label="Storage used"></meter>
-		<span>{formatBytes(storage.usage)} used of {formatBytes(storage.quota)} available</span>
+	{#if library.loaded}
+		{#if room !== null}
+			<meter min="0" max={used + room || 1} value={used} aria-label="Storage the library uses"
+			></meter>
+		{/if}
+		<span
+			>{formatBytes(used)} in your library{room === null
+				? ''
+				: ` · room for ${formatBytes(room)} more`}</span
+		>
 	{/if}
 	{#if persisted}
 		<span class="persisted">Storage is persistent: the browser won't evict your downloads.</span>

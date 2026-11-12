@@ -37,6 +37,26 @@ const STATUS: Record<ItemStatus, string> = {
 	failed: 'Failed'
 };
 
+/**
+ * The bytes the library itself keeps in this browser: each item's file (as
+ * much of it as is written, live while it runs) and its thumbnail. The storage
+ * meter shows this, not the browser's estimate for the whole origin, which
+ * counts everything else the site's address keeps too — other apps served from
+ * the same origin (localhost, github.io), and storage the app doesn't manage.
+ */
+export function libraryBytes(
+	items: readonly LibraryItem[],
+	live: Readonly<Record<string, DownloadProgress>>
+): number {
+	return items.reduce((sum, item) => {
+		const written =
+			item.status === 'complete'
+				? (item.bytesTotal ?? item.bytesDone)
+				: (live[item.id]?.bytesDone ?? item.bytesDone);
+		return sum + written + (item.thumbnail?.size ?? 0);
+	}, 0);
+}
+
 /** An item's status in words; a finished import was imported, not downloaded. */
 export function statusLabel(status: ItemStatus, origin?: LibraryItem['origin']): string {
 	return status === 'complete' && origin === 'import' ? 'Imported' : STATUS[status];
