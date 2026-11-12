@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	MAX_FRAMES,
 	MIN_CROP,
+	MIN_MARK_GAP,
 	MIN_SPAN,
 	animationFileName,
 	defaultRange,
@@ -13,6 +14,7 @@ import {
 	frameCount,
 	formatClipTime,
 	frameDelays,
+	frameMarks,
 	frameTimes,
 	fullFrame,
 	moveRange,
@@ -168,6 +170,27 @@ describe('frames', () => {
 
 	it('has a ceiling', () => {
 		expect(MAX_FRAMES).toBeGreaterThanOrEqual(300);
+	});
+
+	it('are marked on the time range where each is taken, while the marks stand apart', () => {
+		// 2 s on 800 px, 10 fps: a mark every 40 px, from 0.5 s for 10 frames.
+		expect(frameMarks({ start: 0.5, end: 1.5 }, 10, 2, 800)).toEqual({
+			start: 0.5,
+			length: 1,
+			count: 10
+		});
+		// As many marks as frames, the last one's time included: 12.48 frames' worth make 12.
+		expect(frameMarks({ start: 0, end: 1.04 }, 12, 4, 800)).toEqual({
+			start: 0,
+			length: 1,
+			count: 12
+		});
+		// A minute of video on 800 px at 12 fps: marks 1.1 px apart would be one bar.
+		expect(frameMarks({ start: 0, end: 5 }, 12, 60, 800)).toBeNull();
+		expect(frameMarks({ start: 0, end: 1 }, 10, 10, 10 * 10 * MIN_MARK_GAP)).not.toBeNull();
+		expect(frameMarks({ start: 0, end: 1 }, 10, 10, 10 * 10 * MIN_MARK_GAP - 1)).toBeNull();
+		// Not laid out (yet).
+		expect(frameMarks({ start: 0, end: 1 }, 10, 2, 0)).toBeNull();
 	});
 });
 

@@ -1,12 +1,15 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import {
 		MIN_SPAN,
 		formatClipTime,
+		frameMarks,
 		moveRange,
 		setRangeEdge,
 		type TimeRange
 	} from '$lib/animate/clip';
 	import { followPointer } from './drag';
+	import { observeSize } from './size';
 
 	type Edge = 'start' | 'end';
 
@@ -19,6 +22,10 @@
 		disabled?: boolean;
 		/** Someone moved an edge: `time` is where it is now (to show the frame there). */
 		onscrub?: (edge: Edge, time: number) => void;
+		/** The animation's frame rate: where they stand apart, its frames are marked on the range. */
+		fps?: number | null;
+		/** Pictures across the whole track (the frame timeline), darkened outside the range. */
+		children?: Snippet;
 	}
 
 	let {
@@ -26,7 +33,9 @@
 		duration,
 		playhead = null,
 		disabled = false,
-		onscrub
+		onscrub,
+		fps = null,
+		children
 	}: Props = $props();
 
 	const STEP = 0.1;
@@ -35,7 +44,10 @@
 	const LABEL: Record<Edge, string> = { start: 'Start', end: 'End' };
 
 	let track: HTMLDivElement;
+	/** CSS pixels; 0 until laid out. */
+	let trackWidth = $state(0);
 	const span = $derived(Math.min(MIN_SPAN, duration));
+	const marks = $derived(fps ? frameMarks(range, fps, duration, trackWidth) : null);
 	const percent = (time: number) => (duration > 0 ? (time / duration) * 100 : 0);
 
 	function timeAt(clientX: number): number {
@@ -104,11 +116,32 @@
 <div
 	class="slider"
 	class:disabled
+	class:pictured={children}
 	role="group"
 	aria-label="Time range"
 	bind:this={track}
 	onpointerdown={grabTrack}
+	{@attach observeSize((size) => (trackWidth = size.width))}
 >
+	{#if children || marks}
+		<!-- What the track shows: under the controls, clipped to its corners, in no pointer's way. -->
+		<div class="layers" aria-hidden="true">
+			{#if children}
+				{@render children()}
+				<div class="dim" style:left="0" style:width="{percent(range.start)}%"></div>
+				<div class="dim" style:left="{percent(range.end)}%" style:right="0"></div>
+			{/if}
+			{#if marks}
+				<div
+					class="marks"
+					data-frames={marks.count}
+					style:left="{percent(marks.start)}%"
+					style:width="{percent(marks.length)}%"
+					style:--frames={marks.count}
+				></div>
+			{/if}
+		</div>
+	{/if}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="selection"
@@ -151,6 +184,42 @@
 		user-select: none;
 	}
 
+	.layers {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+		border-radius: inherit;
+		pointer-events: none;
+	}
+
+	.dim {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		background: rgb(0 0 0 / 0.55);
+	}
+
+	/*
+	 * A short line where each frame is taken, along the bottom: one gradient over
+	 * the whole stretch, not a tiled one, whose tiles browsers round to whole pixels.
+	 */
+	.marks {
+		--mark: var(--accent);
+		position: absolute;
+		bottom: 3px;
+		height: 0.45rem;
+		background-image: repeating-linear-gradient(
+			to right,
+			var(--mark) 0 1px,
+			transparent 1px calc(100% / var(--frames))
+		);
+	}
+
+	.pictured .marks {
+		--mark: #fff;
+		background-color: rgb(0 0 0 / 0.4);
+	}
+
 	.selection {
 		position: absolute;
 		top: 0;
@@ -162,6 +231,14 @@
 		cursor: grab;
 	}
 
+	/* Over pictures, the range is seen through: outlined, not tinted. */
+	.pictured .selection {
+		background: none;
+		box-shadow:
+			inset 0 3px 0 var(--accent),
+			inset 0 -3px 0 var(--accent);
+	}
+
 	.playhead {
 		position: absolute;
 		top: 0;
@@ -171,6 +248,12 @@
 		background: var(--text);
 		opacity: 0.7;
 		pointer-events: none;
+	}
+
+	.pictured .playhead {
+		background: #fff;
+		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+		opacity: 0.9;
 	}
 
 	.thumb {

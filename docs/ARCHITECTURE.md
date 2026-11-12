@@ -183,6 +183,13 @@ The dialog plays the file from a `blob:` URL, like the player, and lays two cont
 
 - **A time range**: two sliders on one track (`RangeSlider.svelte`). Dragging or keying an end
   shows that frame; dragging the space between them moves the whole range; Preview loops it.
+  The track is a frame timeline (`Filmstrip.svelte`, `filmstrip.ts`): pictures from across the
+  whole video, as many as fill it, each the middle of the stretch under it, with the video
+  outside the range darkened. A second `<video>` over the same file takes them, so the dialog's
+  own is never moved. It is in the page, one transparent pixel in a corner of the screen, because
+  WebKit draws a video on a canvas only while it is in the page and on screen. Over the range, a
+  mark stands where each of the animation's frames will be taken, wherever the marks are far
+  enough apart to tell.
 - **A crop**: a box with eight handles over the picture (`CropBox.svelte`), in the video's own
   pixels. The stage has exactly the video's shape, so the box's percentages are the picture's.
 

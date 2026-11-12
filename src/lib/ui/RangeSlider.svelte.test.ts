@@ -1,12 +1,19 @@
+import { flushSync, createRawSnippet, type Snippet } from 'svelte';
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_SPAN, type TimeRange } from '$lib/animate/clip';
+import { FakeResizeObserver, resizeAll } from '../../../tests/helpers/resize-observer';
 import RangeSlider from './RangeSlider.svelte';
 
-function setup(range: TimeRange = { start: 2, end: 5 }, duration = 10, disabled = false) {
+function setup(
+	range: TimeRange = { start: 2, end: 5 },
+	duration = 10,
+	disabled = false,
+	extra: { fps?: number; children?: Snippet } = {}
+) {
 	const changes: TimeRange[] = [];
 	const onscrub = vi.fn();
-	const props = $state({ range, duration, disabled, onscrub });
+	const props = $state({ range, duration, disabled, onscrub, fps: extra.fps });
 	render(RangeSlider, {
 		get range() {
 			return props.range;
@@ -21,6 +28,10 @@ function setup(range: TimeRange = { start: 2, end: 5 }, duration = 10, disabled 
 		get disabled() {
 			return props.disabled;
 		},
+		get fps() {
+			return props.fps;
+		},
+		children: extra.children,
 		onscrub
 	});
 	const track = screen.getByRole('group', { name: 'Time range' });
@@ -110,5 +121,63 @@ describe('RangeSlider', () => {
 		await fireEvent.pointerMove(window, { clientX: 250, pointerId: 1 });
 		expect(changes).toEqual([]);
 		expect(start).toHaveAttribute('aria-disabled', 'true');
+	});
+
+	it('shows what it is given across the track, darkened outside the range', () => {
+		const strip = createRawSnippet(() => ({ render: () => '<div data-testid="strip"></div>' }));
+		const { track } = setup(undefined, undefined, undefined, { children: strip });
+		expect(track).toContainElement(screen.getByTestId('strip'));
+		const [before, after] = track.querySelectorAll<HTMLElement>('.dim');
+		expect(before.style.width).toBe('20%');
+		expect(after.style.left).toBe('50%');
+	});
+
+	it('darkens nothing when there is nothing behind it', () => {
+		const { track } = setup();
+		expect(track.querySelectorAll('.dim')).toHaveLength(0);
+	});
+});
+
+describe("RangeSlider's frame marks", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	const marks = (track: HTMLElement) => track.querySelector<HTMLElement>('.marks');
+
+	it("mark where each of the animation's frames is taken, while they stand apart", async () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const { props, track } = setup({ start: 2, end: 5 }, 10, false, { fps: 10 });
+		// Laid out 800 px wide: 10 s at 10 fps puts frames 8 px apart.
+		resizeAll(800, 44);
+		flushSync();
+		expect(marks(track)).toHaveAttribute('data-frames', '30');
+		expect(marks(track)!.style.left).toBe('20%');
+		expect(marks(track)!.style.width).toBe('30%');
+		// They follow the range.
+		props.range = { start: 1, end: 2 };
+		flushSync();
+		expect(marks(track)).toHaveAttribute('data-frames', '10');
+		expect(marks(track)!.style.left).toBe('10%');
+		// 30 fps: under 3 px apart, they would run together.
+		props.fps = 30;
+		flushSync();
+		expect(marks(track)).toBeNull();
+		// Wider, they stand apart again.
+		resizeAll(1600, 44);
+		flushSync();
+		expect(marks(track)).toHaveAttribute('data-frames', '30');
+	});
+
+	it('are left out until the track is laid out', () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const { track } = setup({ start: 2, end: 5 }, 10, false, { fps: 10 });
+		expect(marks(track)).toBeNull();
+	});
+
+	it('are left out without a frame rate', () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const { track } = setup();
+		resizeAll(800, 44);
+		flushSync();
+		expect(marks(track)).toBeNull();
 	});
 });

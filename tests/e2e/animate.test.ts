@@ -10,6 +10,7 @@ import { readAnimatedWebp, stillWebp } from '../helpers/webp';
 import { expect, test } from './fixtures';
 import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, probe } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
+import { FIXTURE_PATH, pickFiles } from './device';
 
 const FIXTURE = new Uint8Array(
 	readFileSync(new URL('../fixtures/media/bbf-360.webm', import.meta.url))
@@ -33,6 +34,39 @@ async function fixtureFrames(width: number, height: number): Promise<Uint8Clampe
 	return ff.withFile('clip.webm', FIXTURE, (path) =>
 		ff.rawFrames(['-i', path, '-vf', `crop=${width}:${height}:0:0:exact=1`], width, height)
 	);
+}
+
+/** The fixture's frames as FFmpeg decodes them, the whole picture scaled to `width` × `height`. */
+async function scaledFixtureFrames(width: number, height: number): Promise<Uint8ClampedArray[]> {
+	const ff = await reference();
+	return ff.withFile('clip.webm', FIXTURE, (path) =>
+		ff.rawFrames(['-i', path, '-vf', `scale=${width}:${height}`], width, height)
+	);
+}
+
+/** When picture k of the fixture starts: k/12 s, which WebM rounds to the millisecond. */
+const pictureStart = (k: number) => Math.round((k * 1000) / FIXTURE_FPS) / 1000;
+
+/** The pictures that may be on screen at `time`: the one there, or either, 2 ms from where one starts. */
+function picturesAt(time: number): number[] {
+	const at = (t: number) => {
+		let k = 0;
+		while (k + 1 < 2 * FIXTURE_FPS && pictureStart(k + 1) <= t) k++;
+		return k;
+	};
+	return [...new Set([at(time - 0.002), at(time + 0.002)])];
+}
+
+/**
+ * Root-mean-square difference per RGB channel, over RGBA pixels: a few pixels far apart
+ * count for more than many a little apart — the number on a frame, more than its colors.
+ */
+function rmsDifference(a: ArrayLike<number>, b: ArrayLike<number>): number {
+	let sum = 0;
+	for (let i = 0; i < a.length; i += 4) {
+		sum += (a[i] - b[i]) ** 2 + (a[i + 1] - b[i + 1]) ** 2 + (a[i + 2] - b[i + 2]) ** 2;
+	}
+	return Math.sqrt(sum / ((a.length / 4) * 3));
 }
 
 /** Mean absolute difference per RGB channel, over RGBA pixels. */
@@ -403,5 +437,97 @@ test.describe('animated images from a video in the library', () => {
 
 		expect(await violations()).toEqual([]);
 		expect(consoleCsp).toEqual([]);
+	});
+});
+
+test.describe('the frame timeline', () => {
+	// Pictures drawn at twice the size: the low-bitrate encode left some of the clip's frames
+	// alike but for their numbers, which need the pixels.
+	test.use({ deviceScaleFactor: 2 });
+
+	test("shows the video's pictures across the time range, and marks each frame the animation takes", async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		// Straight from disk: no engine, no private storage, in every browser.
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const track = dialog.getByRole('group', { name: 'Time range' });
+		const strip = track.locator('.filmstrip');
+		const tiles = strip.locator('canvas');
+		await expect
+			.poll(
+				async () => {
+					const count = await tiles.count();
+					return count > 0 && (await strip.getAttribute('data-taken')) === String(count);
+				},
+				{ timeout: 15_000, message: 'every picture of the strip drawn' }
+			)
+			.toBe(true);
+
+		// Each tile is the picture on screen at its time, the middle of the stretch it stands for:
+		// the closest of all the clip's pictures (as ffmpeg.wasm decodes them, at the tile's size),
+		// and close to it. (Chromium lands at 4-5, WebKit 5-7 and Firefox, whose colors are
+		// further from FFmpeg's, 8-11; the next closest at least 2 more, a blank tile 120.)
+		const pictures = await probe('read the frame timeline', () =>
+			strip.evaluate((element) =>
+				[...element.querySelectorAll('canvas')].map((canvas) => ({
+					time: Number(canvas.dataset.time),
+					width: canvas.width,
+					height: canvas.height,
+					pixels: [...canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data]
+				}))
+			)
+		);
+		const { width, height } = pictures[0];
+		const box = (await strip.boundingBox())!;
+		expect(pictures.length).toBe(Math.ceil(box.width / (box.height * (640 / 360))));
+		expect(pictures.map((p) => p.time)).toEqual(
+			pictures.map((_, i) => Math.round(((i + 0.5) * 2 * 1e6) / pictures.length) / 1e6)
+		);
+		const source = await scaledFixtureFrames(width, height);
+		for (const { time, pixels } of pictures) {
+			const differences = source.map((frame) => rmsDifference(pixels, frame));
+			const closest = differences.indexOf(Math.min(...differences));
+			const from = `tile at ${time} s, from each picture: ${differences.map((d) => d.toFixed(1)).join(' ')}`;
+			expect(picturesAt(time), from).toContain(closest);
+			expect(differences[closest], from).toBeLessThan(15);
+		}
+
+		// A mark where each frame is taken: from the start of the range to its end, as many as the
+		// animation has frames.
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		const marks = track.locator('.marks');
+		const summary = dialog.locator('#animate-summary');
+		const center = async (locator: Locator) => {
+			const { x, width } = (await locator.boundingBox())!;
+			return x + width / 2;
+		};
+		const expectMarksOfRange = async (frames: number) => {
+			await expect(summary).toContainText(`· ${frames} frames`);
+			await expect(marks).toHaveAttribute('data-frames', String(frames));
+			const { x, width } = (await marks.boundingBox())!;
+			expect(Math.abs(x - (await center(start)))).toBeLessThanOrEqual(1);
+			expect(Math.abs(x + width - (await center(end)))).toBeLessThanOrEqual(1);
+		};
+		await expect(dialog.getByLabel('Frame rate')).toHaveValue('12');
+		await expectMarksOfRange(24);
+		for (let i = 0; i < 5; i++) await start.press('ArrowRight');
+		await expectMarksOfRange(18);
+		await dialog.getByLabel('Frame rate').selectOption({ label: '10 fps' });
+		await expectMarksOfRange(15);
+
+		// The pictures and the darkening are behind the controls: pressing the track over them,
+		// outside the range, still brings the nearer end there.
+		const { x, y, width: trackWidth, height: trackHeight } = (await track.boundingBox())!;
+		await page.mouse.click(x + trackWidth * 0.1, y + trackHeight / 2);
+		// To a screen pixel's worth of 0.2 s (pointer events may say where in whole pixels).
+		await expect
+			.poll(async () => Math.abs(Number(await start.getAttribute('aria-valuenow')) - 0.2))
+			.toBeLessThanOrEqual(2 / trackWidth + 0.001);
+
+		expect(await violations()).toEqual([]);
 	});
 });

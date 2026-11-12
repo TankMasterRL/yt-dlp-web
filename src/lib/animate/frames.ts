@@ -75,6 +75,35 @@ export interface VideoMetadata {
 	duration: number;
 }
 
+/** A <video> of the page's own over a file, for taking pictures: nobody watches it. */
+export interface OpenedVideo {
+	video: SeekableVideo & CanvasImageSource;
+	/** Lets go of the file: the element stops reading it, and its blob: URL is revoked. */
+	close(): void;
+}
+
+/**
+ * A muted <video> over a blob: URL of `file` (CSP media-src blob:): `video`,
+ * or a new one outside the page. WebKit (at least Playwright's, on Linux)
+ * draws a video on a canvas only while it is in the page and on screen: a
+ * detached one draws nothing.
+ */
+export function openVideo(file: Blob, video = document.createElement('video')): OpenedVideo {
+	video.muted = true;
+	video.playsInline = true;
+	video.preload = 'auto';
+	const url = URL.createObjectURL(file);
+	video.src = url;
+	return {
+		video,
+		close() {
+			video.removeAttribute('src');
+			video.load();
+			URL.revokeObjectURL(url);
+		}
+	};
+}
+
 const HAVE_METADATA = 1;
 const HAVE_CURRENT_DATA = 2;
 
