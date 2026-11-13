@@ -1,6 +1,7 @@
 import { flushSync } from 'svelte';
 import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TimeRange } from '$lib/animate/clip';
 import type { OpenedVideo } from '$lib/animate/frames';
 import { FakeResizeObserver, resizeAll } from '../../../tests/helpers/resize-observer';
 import { FakeVideo } from '../../../tests/helpers/video';
@@ -23,7 +24,7 @@ function recordDraws(video: FakeVideo) {
 	return draws;
 }
 
-function setup() {
+function setup(view: TimeRange | null = null) {
 	const video = new FakeVideo();
 	const opened: OpenedVideo = {
 		video: video as unknown as OpenedVideo['video'],
@@ -32,10 +33,18 @@ function setup() {
 	const file = new Blob(['a video']);
 	const open = vi.fn((_file: Blob) => opened);
 	const draws = recordDraws(video);
-	const { container, unmount } = render(Filmstrip, { file, media, open });
+	const props = $state({ view });
+	const { container, unmount } = render(Filmstrip, {
+		file,
+		media,
+		open,
+		get view() {
+			return props.view;
+		}
+	});
 	const strip = container.querySelector<HTMLElement>('.filmstrip')!;
 	const canvases = () => [...strip.querySelectorAll('canvas')];
-	return { video, opened, file, open, draws, strip, canvases, unmount };
+	return { props, video, opened, file, open, draws, strip, canvases, unmount };
 }
 
 /** Waits until the strip says it has drawn `count` pictures. */
@@ -121,6 +130,54 @@ describe('Filmstrip', () => {
 		await drawn(strip, 5);
 		expect(video.seeks).toHaveLength(5);
 		expect([canvases()[0].width, canvases()[0].height]).toEqual([156, 88]);
+	});
+
+	it('shows the stretch the timeline is zoomed in on', async () => {
+		const { strip, canvases, video } = setup({ start: 1, end: 1.5 });
+		resizeAll(320, 44);
+		flushSync();
+		expect(canvases().map((c) => c.dataset.time)).toEqual(['1.05', '1.15', '1.25', '1.35', '1.45']);
+		await drawn(strip, 5);
+		expect(video.seeks).toEqual([1.05, 1.15, 1.25, 1.35, 1.45]);
+	});
+
+	it('takes them again where the zoom moves, the old pictures shown faded until each is replaced', async () => {
+		const { props, strip, canvases, video, draws } = setup();
+		resizeAll(320, 44);
+		flushSync();
+		await drawn(strip, 5);
+		const before = canvases();
+		video.seeks = [];
+		video.answers = false;
+		props.view = { start: 0, end: 1 };
+		flushSync();
+		// The same canvases, not cleared: what they showed stays until the new picture is in.
+		expect(canvases()).toEqual(before);
+		expect(canvases().map((c) => c.dataset.time)).toEqual(['0.1', '0.3', '0.5', '0.7', '0.9']);
+		expect(canvases().every((c) => c.classList.contains('stale'))).toBe(true);
+		expect(draws.get(before[0])).toHaveLength(1);
+		await vi.waitFor(() => expect(video.seeks).toEqual([0.1]));
+		video.answers = true;
+		video.dispatchEvent(new Event('seeked'));
+		await drawn(strip, 5);
+		expect(canvases().some((c) => c.classList.contains('stale'))).toBe(false);
+		expect(draws.get(before[4])!.at(-1)).toEqual([0.9, 0, 0, 78, 44]);
+	});
+
+	it('takes only the latest stretch while the zoom is dragged', async () => {
+		const { props, strip, video } = setup();
+		resizeAll(320, 44);
+		flushSync();
+		await drawn(strip, 5);
+		video.seeks = [];
+		for (const end of [1.9, 1.8, 1.7, 1.6, 1.5]) {
+			props.view = { start: 1, end };
+			flushSync();
+		}
+		await drawn(strip, 5);
+		// Each earlier stretch gave up at its first picture.
+		expect(video.seeks.slice(-5)).toEqual([1.05, 1.15, 1.25, 1.35, 1.45]);
+		expect(video.seeks.length).toBeLessThanOrEqual(10);
 	});
 
 	it('stops taking pictures and lets go of the video when it goes', async () => {

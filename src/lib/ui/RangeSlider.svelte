@@ -5,11 +5,13 @@
 		formatClipTime,
 		frameMarks,
 		moveRange,
+		revealTime,
 		setRangeEdge,
 		type TimeRange
 	} from '$lib/animate/clip';
 	import { followPointer } from './drag';
 	import { observeSize } from './size';
+	import { edgeTarget, moveDelta } from './slider-keys';
 
 	type Edge = 'start' | 'end';
 
@@ -17,6 +19,11 @@
 		range: TimeRange;
 		/** Seconds. */
 		duration: number;
+		/**
+		 * The stretch of the video the track shows, when zoomed in (null: all of it).
+		 * The keyboard moves it along to show what it moves out of it.
+		 */
+		view?: TimeRange | null;
 		/** Where the preview is, marked on the track. */
 		playhead?: number | null;
 		disabled?: boolean;
@@ -31,6 +38,7 @@
 	let {
 		range = $bindable(),
 		duration,
+		view = $bindable(null),
 		playhead = null,
 		disabled = false,
 		onscrub,
@@ -38,23 +46,56 @@
 		children
 	}: Props = $props();
 
-	const STEP = 0.1;
-	const BIG_STEP = 1;
 	const EDGES: Edge[] = ['start', 'end'];
 	const LABEL: Record<Edge, string> = { start: 'Start', end: 'End' };
 
 	let track: HTMLDivElement;
 	/** CSS pixels; 0 until laid out. */
 	let trackWidth = $state(0);
+	/** What the track shows: the stretch zoomed in on, or the whole video. */
+	const shown = $derived(view ?? { start: 0, end: duration });
+	const shownLength = $derived(shown.end - shown.start);
 	const span = $derived(Math.min(MIN_SPAN, duration));
-	const marks = $derived(fps ? frameMarks(range, fps, duration, trackWidth) : null);
+	const marks = $derived(fps ? frameMarks(range, fps, shownLength, trackWidth) : null);
 	/** As late as the range can start, its length kept. */
 	const latest = $derived(moveRange(range, duration, duration).start);
-	const percent = (time: number) => (duration > 0 ? (time / duration) * 100 : 0);
+	/** How far across the track a time is (past its ends for times it does not show). */
+	const percent = (time: number) =>
+		shownLength > 0 ? ((time - shown.start) / shownLength) * 100 : 0;
+	/** The same, kept on the track. */
+	const onTrack = (time: number) => Math.min(Math.max(percent(time), 0), 100);
+	const showing = (time: number) => time >= shown.start && time <= shown.end;
+	/** What shows of the range, across the track. */
+	const left = $derived(onTrack(range.start));
+	const right = $derived(onTrack(range.end));
 
 	function timeAt(clientX: number): number {
 		const rect = track.getBoundingClientRect();
-		return rect.width ? ((clientX - rect.left) / rect.width) * duration : 0;
+		return rect.width ? shown.start + ((clientX - rect.left) / rect.width) * shownLength : 0;
+	}
+
+	/** Moves what the track shows as little as it takes to show each time, the last for sure. */
+	function reveal(...times: number[]) {
+		let next = shown;
+		for (const time of times) next = revealTime(next, time, duration);
+		if (next !== shown) view = next;
+	}
+
+	/**
+	 * Whether focus is being given by a pointer press, which shows what it pressed:
+	 * what the track shows stays put under the pointer.
+	 */
+	let pressing = false;
+
+	function focusPressed(element: HTMLElement) {
+		pressing = true;
+		element.focus();
+		pressing = false;
+	}
+
+	/** Focus from the keyboard brings what it lands on into view. */
+	function focused(...times: number[]) {
+		if (!pressing) reveal(...times);
 	}
 
 	function setEdge(edge: Edge, time: number) {
@@ -66,27 +107,17 @@
 
 	function keydown(edge: Edge, event: KeyboardEvent) {
 		if (disabled) return;
-		const value = range[edge];
-		const step = event.shiftKey ? BIG_STEP : STEP;
-		const targets: Record<string, number> = {
-			ArrowLeft: value - step,
-			ArrowDown: value - step,
-			ArrowRight: value + step,
-			ArrowUp: value + step,
-			PageDown: value - BIG_STEP,
-			PageUp: value + BIG_STEP,
-			Home: edge === 'start' ? 0 : range.start + span,
-			End: edge === 'start' ? range.end - span : duration
-		};
-		if (!(event.key in targets)) return;
+		const target = edgeTarget(event, range, edge, span, duration);
+		if (target === undefined) return;
 		event.preventDefault();
-		setEdge(edge, targets[event.key]);
+		setEdge(edge, target);
+		reveal(range[edge]);
 	}
 
 	function grabEdge(edge: Edge, event: PointerEvent) {
 		if (disabled || event.button !== 0) return;
 		event.stopPropagation();
-		(event.currentTarget as HTMLElement).focus();
+		focusPressed(event.currentTarget as HTMLElement);
 		followPointer(event, (e) => setEdge(edge, timeAt(e.clientX)));
 	}
 
@@ -100,27 +131,18 @@
 
 	function moveKeydown(event: KeyboardEvent) {
 		if (disabled) return;
-		const step = event.shiftKey ? BIG_STEP : STEP;
-		const deltas: Record<string, number> = {
-			ArrowLeft: -step,
-			ArrowDown: -step,
-			ArrowRight: step,
-			ArrowUp: step,
-			PageDown: -BIG_STEP,
-			PageUp: BIG_STEP,
-			Home: -duration,
-			End: duration
-		};
-		if (!(event.key in deltas)) return;
+		const delta = moveDelta(event, duration);
+		if (delta === undefined) return;
 		event.preventDefault();
-		moveBy(deltas[event.key]);
+		moveBy(delta);
+		reveal(range.end, range.start);
 	}
 
 	/** The selection, or the tab under it: drags the whole range along the track. */
 	function grabRange(event: PointerEvent, focus = false) {
 		if (disabled || event.button !== 0) return;
 		event.stopPropagation();
-		if (focus) (event.currentTarget as HTMLElement).focus();
+		if (focus) focusPressed(event.currentTarget as HTMLElement);
 		const from = range;
 		const origin = timeAt(event.clientX);
 		followPointer(event, (e) => moveBy(timeAt(e.clientX) - origin, from));
@@ -153,15 +175,15 @@
 		<div class="layers" aria-hidden="true">
 			{#if children}
 				{@render children()}
-				<div class="dim" style:left="0" style:width="{percent(range.start)}%"></div>
-				<div class="dim" style:left="{percent(range.end)}%" style:right="0"></div>
+				<div class="dim" style:left="0" style:width="{left}%"></div>
+				<div class="dim" style:left="{right}%" style:right="0"></div>
 			{/if}
 			{#if marks}
 				<div
 					class="marks"
 					data-frames={marks.count}
 					style:left="{percent(marks.start)}%"
-					style:width="{percent(marks.length)}%"
+					style:width="{(marks.length / shownLength) * 100}%"
 					style:--frames={marks.count}
 				></div>
 			{/if}
@@ -170,16 +192,18 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="selection"
-		style:left="{percent(range.start)}%"
-		style:width="{percent(range.end - range.start)}%"
+		style:left="{left}%"
+		style:width="{right - left}%"
 		onpointerdown={(e) => grabRange(e)}
 	></div>
-	{#if playhead !== null}
+	{#if playhead !== null && showing(playhead)}
 		<div class="playhead" style:left="{percent(playhead)}%" aria-hidden="true"></div>
 	{/if}
 	{#each EDGES as edge (edge)}
+		<!-- Out of view, still there for the keyboard, which brings it into view. -->
 		<div
 			class="thumb {edge}"
+			class:outside={!showing(range[edge])}
 			role="slider"
 			tabindex={disabled ? -1 : 0}
 			aria-label={LABEL[edge]}
@@ -188,14 +212,16 @@
 			aria-valuenow={range[edge]}
 			aria-valuetext={formatClipTime(range[edge])}
 			aria-disabled={disabled}
-			style:left="{percent(range[edge])}%"
+			style:left="{onTrack(range[edge])}%"
+			onfocus={() => focused(range[edge])}
 			onkeydown={(e) => keydown(edge, e)}
 			onpointerdown={(e) => grabEdge(edge, e)}
 		></div>
 	{/each}
-	<!-- A tab hanging under the middle of the range: drags the whole range, its length kept. -->
+	<!-- A tab hanging under the middle of the range (of what shows of it): drags the whole range. -->
 	<div
 		class="tab"
+		class:outside={right <= left}
 		role="slider"
 		tabindex={disabled ? -1 : 0}
 		aria-label="Move the range"
@@ -204,7 +230,8 @@
 		aria-valuenow={range.start}
 		aria-valuetext="{formatClipTime(range.start)} to {formatClipTime(range.end)}"
 		aria-disabled={disabled}
-		style:--middle="{percent((range.start + range.end) / 2)}%"
+		style:--middle="{(left + right) / 2}%"
+		onfocus={() => focused(range.end, range.start)}
 		onkeydown={moveKeydown}
 		onpointerdown={(e) => grabRange(e, true)}
 	></div>
@@ -372,6 +399,12 @@
 		margin-left: -6px;
 		background: repeating-linear-gradient(to right, var(--accent-text) 0 2px, transparent 2px 5px);
 		opacity: 0.8;
+	}
+
+	/* An end, or the whole range, outside what the zoomed track shows. */
+	.outside {
+		opacity: 0;
+		pointer-events: none;
 	}
 
 	.disabled {

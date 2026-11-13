@@ -45,10 +45,14 @@ describe('the frame timeline', () => {
 	});
 
 	it('shows each stretch of the video by the picture in its middle', () => {
-		expect(tileTimes(2, 4)).toEqual([0.25, 0.75, 1.25, 1.75]);
+		expect(tileTimes({ start: 0, end: 2 }, 4)).toEqual([0.25, 0.75, 1.25, 1.75]);
 		// Microseconds, as media elements count.
-		expect(tileTimes(10, 3)).toEqual([1.666667, 5, 8.333333]);
-		expect(tileTimes(2, 0)).toEqual([]);
+		expect(tileTimes({ start: 0, end: 10 }, 3)).toEqual([1.666667, 5, 8.333333]);
+		expect(tileTimes({ start: 0, end: 2 }, 0)).toEqual([]);
+	});
+
+	it('shows only the stretch the timeline is zoomed in on', () => {
+		expect(tileTimes({ start: 1, end: 1.5 }, 5)).toEqual([1.05, 1.15, 1.25, 1.35, 1.45]);
 	});
 
 	it("draws each picture at the strip's height in device pixels, in the video's shape", () => {

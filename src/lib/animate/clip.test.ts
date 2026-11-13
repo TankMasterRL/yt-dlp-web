@@ -5,6 +5,7 @@ import {
 	MIN_CROP,
 	MIN_MARK_GAP,
 	MIN_SPAN,
+	MIN_VIEW,
 	animationFileName,
 	defaultRange,
 	delayAt,
@@ -19,6 +20,7 @@ import {
 	fullFrame,
 	moveRange,
 	outputSize,
+	revealTime,
 	sampleIndices,
 	setRangeEdge,
 	suggestedFps,
@@ -135,6 +137,32 @@ describe('time ranges', () => {
 		expect(moveRange(range, 2.5, 10)).toEqual({ start: 3.5, end: 5.5 });
 		expect(moveRange(range, -5, 10)).toEqual({ start: 0, end: 2 });
 		expect(moveRange(range, 20, 10)).toEqual({ start: 8, end: 10 });
+	});
+
+	it('keeps edges as far apart as asked: the zoomed timeline shows at least MIN_VIEW', () => {
+		const view = { start: 1, end: 3 };
+		expect(setRangeEdge(view, 'end', 1.2, 10, MIN_VIEW)).toEqual({ start: 1, end: 1 + MIN_VIEW });
+		expect(setRangeEdge(view, 'start', 5, 10, MIN_VIEW)).toEqual({ start: 3 - MIN_VIEW, end: 3 });
+		// A video shorter than that is shown whole.
+		expect(setRangeEdge({ start: 0, end: 0.3 }, 'end', 0.1, 0.3, MIN_VIEW)).toEqual({
+			start: 0,
+			end: 0.3
+		});
+	});
+});
+
+describe('the zoomed timeline', () => {
+	it('moves as little as it takes to show a time, its length kept', () => {
+		const view = { start: 2, end: 3 };
+		// Already shown: the same view, not a copy.
+		expect(revealTime(view, 2.5, 10)).toBe(view);
+		expect(revealTime(view, 2, 10)).toBe(view);
+		expect(revealTime(view, 3, 10)).toBe(view);
+		expect(revealTime(view, 1.2, 10)).toEqual({ start: 1.2, end: 2.2 });
+		expect(revealTime(view, 4.5, 10)).toEqual({ start: 3.5, end: 4.5 });
+		// Never past the video's ends.
+		expect(revealTime(view, -1, 10)).toEqual({ start: 0, end: 1 });
+		expect(revealTime(view, 12, 10)).toEqual({ start: 9, end: 10 });
 	});
 });
 

@@ -1,14 +1,14 @@
 /**
- * The frame timeline: pictures from across the whole video, side by side
- * under the time range, so a stretch can be picked by what is in it. Each
- * picture stands for the stretch of the video under it and shows that
- * stretch's middle.
+ * The frame timeline: pictures from across the video — all of it, or the
+ * stretch the timeline is zoomed in on — side by side under the time range,
+ * so a stretch can be picked by what is in it. Each picture stands for the
+ * stretch of the video under it and shows that stretch's middle.
  *
  * The pictures are taken by seeking a <video> of their own, never the
  * dialog's, which shows the range's edges, previews and takes the
  * animation's frames meanwhile.
  */
-import type { Size } from './clip';
+import type { Size, TimeRange } from './clip';
 import { mediaMetadata, seek, type SeekableVideo } from './frames';
 
 /** Each picture is a seek: a strip holds at most this many. */
@@ -23,11 +23,15 @@ export function tileCount(strip: Size, aspect: number): number {
 	return Math.min(MAX_TILES, Math.ceil(strip.width / (strip.height * aspect)));
 }
 
-/** When each of `count` pictures is taken: the middle of the stretch it stands for. */
-export function tileTimes(duration: number, count: number): number[] {
+/**
+ * When each of `count` pictures across `shown` (the stretch the timeline shows)
+ * is taken: the middle of the stretch it stands for.
+ */
+export function tileTimes(shown: TimeRange, count: number): number[] {
+	const length = shown.end - shown.start;
 	return Array.from(
 		{ length: count },
-		(_, i) => Math.round((((i + 0.5) * duration) / count) * 1e6) / 1e6
+		(_, i) => Math.round((shown.start + ((i + 0.5) * length) / count) * 1e6) / 1e6
 	);
 }
 

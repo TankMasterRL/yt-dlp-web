@@ -34,6 +34,11 @@ export type CropHandle = 'move' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | '
 export const MIN_CROP = 16;
 /** The shortest range, in seconds. */
 export const MIN_SPAN = 0.1;
+/**
+ * The shortest stretch the frame timeline zooms in to, in seconds: a handful
+ * of a video's pictures across the whole track, each as wide as a thumb.
+ */
+export const MIN_VIEW = 0.5;
 /** A new editor starts with this much of the video. */
 export const DEFAULT_SPAN = 5;
 /**
@@ -94,14 +99,19 @@ export function defaultRange(duration: number): TimeRange {
 	return { start: 0, end: ms(Math.min(duration, DEFAULT_SPAN)) };
 }
 
-/** `range` with one edge moved to `time`, inside the video and at least MIN_SPAN long. */
+/**
+ * `range` with one edge moved to `time`, inside the video and at least
+ * `minSpan` long (MIN_SPAN for the animation's range, MIN_VIEW for the
+ * stretch the timeline shows) — or all of a shorter video.
+ */
 export function setRangeEdge(
 	range: TimeRange,
 	edge: 'start' | 'end',
 	time: number,
-	duration: number
+	duration: number,
+	minSpan = MIN_SPAN
 ): TimeRange {
-	const span = Math.min(MIN_SPAN, duration);
+	const span = Math.min(minSpan, duration);
 	return edge === 'start'
 		? { start: ms(clamp(time, 0, range.end - span)), end: range.end }
 		: { start: range.start, end: ms(clamp(time, range.start + span, duration)) };
@@ -112,6 +122,16 @@ export function moveRange(range: TimeRange, delta: number, duration: number): Ti
 	const length = range.end - range.start;
 	const start = ms(clamp(range.start + delta, 0, duration - length));
 	return { start, end: ms(start + length) };
+}
+
+/**
+ * The stretch the timeline shows, moved as little as it takes to show `time`
+ * (its length kept, inside the video); `view` itself when it already does.
+ */
+export function revealTime(view: TimeRange, time: number, duration: number): TimeRange {
+	if (time < view.start) return moveRange(view, time - view.start, duration);
+	if (time > view.end) return moveRange(view, time - view.end, duration);
+	return view;
 }
 
 /** How many frames `range` makes at `fps`: at least one. */

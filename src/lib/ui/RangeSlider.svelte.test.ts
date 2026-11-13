@@ -9,11 +9,19 @@ function setup(
 	range: TimeRange = { start: 2, end: 5 },
 	duration = 10,
 	disabled = false,
-	extra: { fps?: number; children?: Snippet } = {}
+	extra: { fps?: number; children?: Snippet; view?: TimeRange; playhead?: number } = {}
 ) {
 	const changes: TimeRange[] = [];
 	const onscrub = vi.fn();
-	const props = $state({ range, duration, disabled, onscrub, fps: extra.fps });
+	const props = $state({
+		range,
+		duration,
+		disabled,
+		onscrub,
+		fps: extra.fps,
+		view: extra.view ?? null,
+		playhead: extra.playhead ?? null
+	});
 	render(RangeSlider, {
 		get range() {
 			return props.range;
@@ -21,6 +29,15 @@ function setup(
 		set range(value: TimeRange) {
 			props.range = value;
 			changes.push(value);
+		},
+		get view() {
+			return props.view;
+		},
+		set view(value: TimeRange | null) {
+			props.view = value;
+		},
+		get playhead() {
+			return props.playhead;
 		},
 		get duration() {
 			return props.duration;
@@ -201,6 +218,124 @@ describe('RangeSlider', () => {
 	});
 });
 
+describe('RangeSlider, zoomed in', () => {
+	// The track shows 2 s to 4 s of the 10 s video: 100 px a second over its 200 px.
+	const view = { start: 2, end: 4 };
+	const zoomed = (range: TimeRange, extra: { playhead?: number } = {}) =>
+		setup(range, 10, false, { view, ...extra });
+	const selection = (track: HTMLElement) => track.querySelector<HTMLElement>('.selection')!;
+
+	it('shows the stretch it is zoomed in on across the whole track', () => {
+		const { start, end, tab, track } = zoomed({ start: 2.5, end: 3 });
+		expect(start.style.left).toBe('25%');
+		expect(end.style.left).toBe('50%');
+		expect(selection(track).style.left).toBe('25%');
+		expect(selection(track).style.width).toBe('25%');
+		expect(tab.style.getPropertyValue('--middle')).toBe('37.5%');
+		// Still the range's own values, whatever the track shows.
+		expect(start).toHaveAttribute('aria-valuenow', '2.5');
+		expect(start).toHaveAttribute('aria-valuemin', '0');
+		expect(end).toHaveAttribute('aria-valuemax', '10');
+	});
+
+	it('takes the pointer to the stretch it shows: a pixel is a hundredth of a second', async () => {
+		const { props, end, track, onscrub } = zoomed({ start: 2.5, end: 3 });
+		await fireEvent.pointerDown(end, { clientX: 200, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 201, pointerId: 1 });
+		expect(props.range).toEqual({ start: 2.5, end: 3.01 });
+		expect(onscrub).toHaveBeenLastCalledWith('end', 3.01);
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		await fireEvent.pointerDown(track, { clientX: 290, button: 0, pointerId: 1 });
+		expect(props.range).toEqual({ start: 2.5, end: 3.9 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		const tab = screen.getByRole('slider', { name: 'Move the range' });
+		await fireEvent.pointerDown(tab, { clientX: 150, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 140, pointerId: 1 });
+		expect(props.range).toEqual({ start: 2.4, end: 3.8 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		// Dragging never moves what the track shows.
+		expect(props.view).toEqual(view);
+	});
+
+	it('hides what lies outside it, and cuts the range off at its ends', () => {
+		const { props, start, end, tab, track } = zoomed({ start: 1, end: 3 });
+		expect(start).toHaveClass('outside');
+		// Kept on the track, where focus would not scroll the dialog sideways to it.
+		expect(start.style.left).toBe('0%');
+		expect(end).not.toHaveClass('outside');
+		expect(selection(track).style.left).toBe('0%');
+		expect(selection(track).style.width).toBe('50%');
+		// Under the middle of what shows of the range.
+		expect(tab.style.getPropertyValue('--middle')).toBe('25%');
+		expect(tab).not.toHaveClass('outside');
+		props.range = { start: 5, end: 6 };
+		flushSync();
+		expect(start).toHaveClass('outside');
+		expect(end).toHaveClass('outside');
+		expect(end.style.left).toBe('100%');
+		expect(tab).toHaveClass('outside');
+		expect(selection(track).style.width).toBe('0%');
+	});
+
+	it('darkens the pictures outside the range only as far as they show', () => {
+		const strip = createRawSnippet(() => ({ render: () => '<div></div>' }));
+		const { track } = setup({ start: 1, end: 3 }, 10, false, { view, children: strip });
+		const [before, after] = track.querySelectorAll<HTMLElement>('.dim');
+		expect(before.style.width).toBe('0%');
+		expect(after.style.left).toBe('50%');
+	});
+
+	it('marks the preview where it shows', () => {
+		const { props, track } = zoomed({ start: 2.5, end: 3 }, { playhead: 3.5 });
+		expect(track.querySelector<HTMLElement>('.playhead')!.style.left).toBe('75%');
+		props.playhead = 4.5;
+		flushSync();
+		expect(track.querySelector('.playhead')).toBeNull();
+	});
+
+	it('follows an end the keyboard takes out of it', async () => {
+		const { props, end } = zoomed({ start: 2.5, end: 3.95 });
+		await fireEvent.keyDown(end, { key: 'ArrowRight' });
+		expect(props.range.end).toBe(4.05);
+		expect(props.view).toEqual({ start: 2.05, end: 4.05 });
+		await fireEvent.keyDown(end, { key: 'End' });
+		expect(props.view).toEqual({ start: 8, end: 10 });
+		// Within it, it stays put.
+		await fireEvent.keyDown(end, { key: 'ArrowLeft' });
+		expect(props.view).toEqual({ start: 8, end: 10 });
+	});
+
+	it('follows the range its tab moves from the keyboard: its start shown, and its end if it fits', async () => {
+		const { props, tab } = zoomed({ start: 2.5, end: 3 });
+		await fireEvent.keyDown(tab, { key: 'End' });
+		expect(props.range).toEqual({ start: 9.5, end: 10 });
+		expect(props.view).toEqual({ start: 8, end: 10 });
+		await fireEvent.keyDown(tab, { key: 'Home' });
+		expect(props.view).toEqual({ start: 0, end: 2 });
+		props.range = { start: 0, end: 5 };
+		await fireEvent.keyDown(tab, { key: 'PageUp' });
+		// Longer than what shows: the start.
+		expect(props.view).toEqual({ start: 1, end: 3 });
+	});
+
+	it('shows an end the keyboard brings focus to, but stays put for a pointer', async () => {
+		const { props, start, tab } = zoomed({ start: 1, end: 3 });
+		await fireEvent.pointerDown(tab, { clientX: 150, button: 0, pointerId: 1 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		expect(tab).toHaveFocus();
+		expect(props.view).toEqual(view);
+		start.focus();
+		expect(props.view).toEqual({ start: 1, end: 3 });
+	});
+
+	it('changes nothing it shows while the whole video fits', async () => {
+		const { props, end } = setup({ start: 2, end: 5 });
+		await fireEvent.keyDown(end, { key: 'End' });
+		end.focus();
+		expect(props.view).toBeNull();
+	});
+});
+
 describe("RangeSlider's frame marks", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
@@ -228,6 +363,21 @@ describe("RangeSlider's frame marks", () => {
 		resizeAll(1600, 44);
 		flushSync();
 		expect(marks(track)).toHaveAttribute('data-frames', '30');
+	});
+
+	it('stand apart once the timeline is zoomed in far enough', async () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const { props, track } = setup({ start: 2, end: 3 }, 10, false, { fps: 30 });
+		// 10 s over 800 px: 30 fps frames under 3 px apart.
+		resizeAll(800, 44);
+		flushSync();
+		expect(marks(track)).toBeNull();
+		// 2 s over 800 px: 13 px apart, from the range's start, as long as its frames.
+		props.view = { start: 1.5, end: 3.5 };
+		flushSync();
+		expect(marks(track)).toHaveAttribute('data-frames', '30');
+		expect(marks(track)!.style.left).toBe('25%');
+		expect(marks(track)!.style.width).toBe('50%');
 	});
 
 	it('are left out until the track is laid out', () => {

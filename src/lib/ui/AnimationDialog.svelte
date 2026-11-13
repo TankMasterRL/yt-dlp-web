@@ -23,7 +23,8 @@
 		evenRates,
 		formatClipTime,
 		formatFps,
-		fullFrame
+		fullFrame,
+		type TimeRange
 	} from '$lib/animate/clip';
 	import { workerEncoder } from '$lib/animate/client';
 	import { AnimationEditor } from '$lib/animate/editor.svelte';
@@ -42,6 +43,7 @@
 	import RangeSlider from './RangeSlider.svelte';
 	import { saveFile } from './save';
 	import Spinner from './Spinner.svelte';
+	import ZoomBar from './ZoomBar.svelte';
 
 	interface Props {
 		/** The video: from the library's private storage, or a file opened straight from disk. */
@@ -63,6 +65,8 @@
 	let measuring = $state(false);
 	/** Where the video is, shown on the time range. */
 	let playhead = $state(0);
+	/** The stretch of the video the frame timeline is zoomed in on (null: all of it). */
+	let view = $state<TimeRange | null>(null);
 	let previewing = $state(false);
 	let resultUrl = $state<string | null>(null);
 	/** Whether the browser failed to show the result (most cannot show JPEG XL yet). */
@@ -103,6 +107,7 @@
 			.then((media) => {
 				if (opening.signal.aborted) return;
 				editor.setMedia(media);
+				view = null;
 				measuring = true;
 				void sourceFps(media.duration, opening.signal).then((fps) => {
 					if (opening.signal.aborted) return;
@@ -245,16 +250,20 @@
 				{/if}
 			</div>
 			{#if editor.media}
-				<RangeSlider
-					bind:range={editor.range}
-					duration={editor.media.duration}
-					{playhead}
-					fps={editor.fps}
-					disabled={editor.rendering}
-					onscrub={show}
-				>
-					<Filmstrip {file} media={editor.media} />
-				</RangeSlider>
+				<div class="timeline">
+					<RangeSlider
+						bind:range={editor.range}
+						bind:view
+						duration={editor.media.duration}
+						{playhead}
+						fps={editor.fps}
+						disabled={editor.rendering}
+						onscrub={show}
+					>
+						<Filmstrip {file} media={editor.media} {view} />
+					</RangeSlider>
+					<ZoomBar bind:view duration={editor.media.duration} range={editor.range} />
+				</div>
 				<p class="readout" aria-live="polite">
 					<span>Start <strong>{formatClipTime(editor.range.start)}</strong></span>
 					<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
@@ -510,6 +519,13 @@
 		pointer-events: none;
 	}
 
+	/* The time range over its frame timeline, and the zoom under it. */
+	.timeline {
+		display: grid;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+
 	.settings {
 		display: grid;
 		gap: 0.75rem;
@@ -678,7 +694,7 @@
 	 */
 	@media (max-height: 32rem) and (min-aspect-ratio: 4 / 3) {
 		dialog {
-			--stage-height: calc(100dvh - 13.75rem);
+			--stage-height: calc(100dvh - 15.5rem);
 		}
 
 		header {
