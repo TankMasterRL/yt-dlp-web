@@ -9,6 +9,7 @@
 		setRangeEdge,
 		type TimeRange
 	} from '$lib/animate/clip';
+	import type { PictureGrid } from '$lib/animate/grid';
 	import { followPointer } from './drag';
 	import { observeSize } from './size';
 	import { edgeTarget, moveDelta } from './slider-keys';
@@ -31,6 +32,11 @@
 		onscrub?: (edge: Edge, time: number) => void;
 		/** The animation's frame rate: where they stand apart, its frames are marked on the range. */
 		fps?: number | null;
+		/**
+		 * Where the video's pictures start, once its frame rate is known: the arrow keys
+		 * then step the range a picture at a time (without, a tenth of a second).
+		 */
+		pictures?: PictureGrid | null;
 		/** Pictures across the whole track (the frame timeline), darkened outside the range. */
 		children?: Snippet;
 	}
@@ -43,6 +49,7 @@
 		disabled = false,
 		onscrub,
 		fps = null,
+		pictures = null,
 		children
 	}: Props = $props();
 
@@ -107,7 +114,7 @@
 
 	function keydown(edge: Edge, event: KeyboardEvent) {
 		if (disabled) return;
-		const target = edgeTarget(event, range, edge, span, duration);
+		const target = edgeTarget(event, range, edge, span, duration, pictures);
 		if (target === undefined) return;
 		event.preventDefault();
 		setEdge(edge, target);
@@ -131,7 +138,7 @@
 
 	function moveKeydown(event: KeyboardEvent) {
 		if (disabled) return;
-		const delta = moveDelta(event, duration);
+		const delta = moveDelta(event, range.start, duration, pictures);
 		if (delta === undefined) return;
 		event.preventDefault();
 		moveBy(delta);

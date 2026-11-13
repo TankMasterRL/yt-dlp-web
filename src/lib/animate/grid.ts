@@ -27,6 +27,9 @@ export interface FrameGrid {
 	span: number;
 }
 
+/** Where pictures start, without how far that was measured: all stepping through them needs. */
+export type PictureGrid = Pick<FrameGrid, 'origin' | 'interval'>;
+
 /** Starts closer than this are one picture reported twice. */
 const SAME_PICTURE = 0.00025;
 /** A start may be off by half a millisecond either way (WebM's rounding): an interval, by twice that. */
@@ -111,7 +114,7 @@ function onGrid(
 }
 
 /** How far a picture may start after a time and count as there, in seconds. */
-const hair = (grid: FrameGrid) => Math.min(HAIR, grid.interval / 4);
+const hair = (grid: PictureGrid) => Math.min(HAIR, grid.interval / 4);
 
 /**
  * How many pictures either side of its origin the grid can be trusted to:
@@ -125,8 +128,31 @@ export function gridReach(grid: FrameGrid): number {
 }
 
 /** The number of the picture on screen at `time`: one starting a hair later counts as there. */
-export function frameIndex(grid: FrameGrid, time: number): number {
+export function frameIndex(grid: PictureGrid, time: number): number {
 	return Math.floor((time - grid.origin + hair(grid)) / grid.interval);
+}
+
+/**
+ * The grid to step through a video's pictures by: at `fps`, the rate its fitted
+ * `grid` was read as (exact, where the fit is a little off it), through the
+ * picture start nearest the video's beginning, kept to the millisecond as
+ * containers keep starts.
+ */
+export function stepGrid(grid: FrameGrid, fps: number): PictureGrid {
+	const interval = 1 / fps;
+	const phase = grid.origin - Math.round(grid.origin / interval) * interval;
+	// `|| 0`: never -0.
+	return { origin: Math.round(phase * 1000) / 1000 || 0, interval };
+}
+
+/**
+ * Where the picture `steps` pictures on from the one on screen at `time` starts
+ * (back, for negative steps): the arrow keys move the time range's ends a
+ * picture at a time. Numbered, not added up, so starts kept to the millisecond
+ * never drift off the pictures, and a step from mid-picture is still one.
+ */
+export function stepFrame(grid: PictureGrid, time: number, steps: number): number {
+	return grid.origin + (frameIndex(grid, time) + steps) * grid.interval;
 }
 
 /** The middle of picture `index`: half an interval from either edge, where a seek is sure to land on it. */

@@ -1,6 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { fitGrid, frameIndex, frameMiddle, frameRate, gridReach, type FrameGrid } from './grid';
+import {
+	fitGrid,
+	frameIndex,
+	frameMiddle,
+	frameRate,
+	gridReach,
+	stepFrame,
+	stepGrid,
+	type FrameGrid
+} from './grid';
 
 /** When picture k starts, as WebM and Matroska store it: in whole milliseconds. */
 const webm = (fps: number, from: number, to: number) =>
@@ -70,7 +79,59 @@ describe('frameIndex and frameMiddle', () => {
 		expect(frameIndex(grid, 0.6 - 0.001)).toBe(1);
 		// Further off than rounding, it is the picture before, however long pictures are.
 		expect(frameIndex(grid, 0.6 - 0.005)).toBe(0);
-		expect(frameIndex({ origin: 0, interval: 1 / 12, span: 5 }, 0.9)).toBe(10);
+		expect(frameIndex({ origin: 0, interval: 1 / 12 }, 0.9)).toBe(10);
+	});
+});
+
+describe('stepFrame', () => {
+	const ms = (seconds: number) => Math.round(seconds * 1000) / 1000;
+
+	it('goes to where the next or the previous picture starts, from anywhere in one', () => {
+		const twelve = { origin: 0, interval: 1 / 12 };
+		// In the middle of picture 6 (0.5 s to 0.583 s).
+		expect(stepFrame(twelve, 0.55, 1)).toBeCloseTo(7 / 12, 9);
+		expect(stepFrame(twelve, 0.55, -1)).toBeCloseTo(5 / 12, 9);
+		// From its start.
+		expect(stepFrame(twelve, 0.5, 1)).toBeCloseTo(7 / 12, 9);
+		expect(stepFrame(twelve, 0.5, -1)).toBeCloseTo(5 / 12, 9);
+	});
+
+	it('steps one picture at a time through starts kept to the millisecond, never drifting', () => {
+		// As the range keeps its ends: 30 fps, each start rounded as WebM rounds them.
+		const thirty = { origin: 0, interval: 1 / 30 };
+		let time = 0;
+		const starts = [];
+		for (let i = 0; i < 90; i++) starts.push((time = ms(stepFrame(thirty, time, 1))));
+		expect(starts).toEqual(webm(30, 1, 90));
+		for (let i = 0; i < 90; i++) time = ms(stepFrame(thirty, time, -1));
+		expect(time).toBe(0);
+	});
+
+	it('steps on the grid the pictures are on, wherever it starts', () => {
+		// 25 fps, the first picture 10 ms in.
+		const grid = { origin: 0.01, interval: 0.04 };
+		expect(stepFrame(grid, 0.05, 1)).toBeCloseTo(0.09, 9);
+		expect(stepFrame(grid, 0.05, -1)).toBeCloseTo(0.01, 9);
+		expect(stepFrame(grid, 0, 1)).toBeCloseTo(0.01, 9);
+	});
+});
+
+describe('stepGrid', () => {
+	it('steps at the rate the grid was read as, from the picture start nearest the beginning', () => {
+		// Fitted a little off 12 fps, numbered from the second picture.
+		const fitted = { origin: 0.0832, interval: 0.0834, span: 20 };
+		expect(stepGrid(fitted, 12)).toEqual({ origin: 0, interval: 1 / 12 });
+		expect(stepGrid({ origin: -0.0002, interval: 1 / 30, span: 30 }, 30)).toEqual({
+			origin: 0,
+			interval: 1 / 30
+		});
+	});
+
+	it('keeps an offset first picture, to the millisecond', () => {
+		expect(stepGrid({ origin: 0.0503, interval: 0.04, span: 25 }, 25)).toEqual({
+			origin: 0.01,
+			interval: 0.04
+		});
 	});
 });
 

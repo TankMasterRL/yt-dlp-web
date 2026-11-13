@@ -200,19 +200,21 @@ Any video in the library can become a looping animation (`src/lib/ui/AnimationDi
 The dialog plays the file from a `blob:` URL, like the player, and lays two controls over it:
 
 - **A time range**: two sliders on one track (`RangeSlider.svelte`). Dragging or keying an end shows
-  that frame; dragging the space between them, or the tab hanging under its middle (a third slider,
-  so the keyboard can move the range too), moves the whole range, its length kept; Preview loops it.
-  The track is a frame timeline (`Filmstrip.svelte`, `filmstrip.ts`): pictures from across the whole
-  video, as many as fill it, each the middle of the stretch under it, with the video outside the
-  range darkened. A second `<video>` over the same file takes them, so the dialog's own is never
-  moved. It is in the page, one transparent pixel in a corner of the screen (`openVideo`), because
-  WebKit draws a video on a canvas only while it is in the page and on screen. Over the range, a
-  mark stands where each of the animation's frames will be taken, wherever the marks are far enough
-  apart to tell. Under it, a zoom bar (`ZoomBar.svelte`) shows the whole video with the range
-  marked on it; its two ends choose the stretch the track shows (at least half a second), and
-  dragging between them moves along the video. Zoomed in, the pictures, the frame marks and every
-  pointer drag are of that stretch alone, so an end can be set picture by picture; what falls
-  outside is hidden, and the keyboard moves the stretch along to show what it moves or focuses.
+  that frame (once the video's frame rate is known, each arrow key steps one of its pictures, from
+  the grid the rate was measured by: `stepGrid`, `stepFrame` in `grid.ts`); dragging the space
+  between them, or the tab hanging under its middle (a third slider, so the keyboard can move the
+  range too), moves the whole range, its length kept; Preview loops it. The track is a frame
+  timeline (`Filmstrip.svelte`, `filmstrip.ts`): pictures from across the whole video, as many as
+  fill it, each the middle of the stretch under it, with the video outside the range darkened. A
+  second `<video>` over the same file takes them, so the dialog's own is never moved. It is in the
+  page, one transparent pixel in a corner of the screen (`openVideo`), because WebKit draws a video
+  on a canvas only while it is in the page and on screen. Over the range, a mark stands where each
+  of the animation's frames will be taken, wherever the marks are far enough apart to tell. Under
+  it, a zoom bar (`ZoomBar.svelte`) shows the whole video with the range marked on it; its two ends
+  choose the stretch the track shows (at least half a second), and dragging between them moves along
+  the video. Zoomed in, the pictures, the frame marks and every pointer drag are of that stretch
+  alone, so an end can be set picture by picture; what falls outside is hidden, and the keyboard
+  moves the stretch along to show what it moves or focuses.
 - **A crop**: a box with eight handles over the picture (`CropBox.svelte`), in the video's own
   pixels. The stage has exactly the video's shape, so the box's percentages are the picture's.
 

@@ -2,6 +2,7 @@ import { flushSync, createRawSnippet, type Snippet } from 'svelte';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_SPAN, type TimeRange } from '$lib/animate/clip';
+import type { PictureGrid } from '$lib/animate/grid';
 import { FakeResizeObserver, resizeAll } from '../../../tests/helpers/resize-observer';
 import RangeSlider from './RangeSlider.svelte';
 
@@ -9,7 +10,13 @@ function setup(
 	range: TimeRange = { start: 2, end: 5 },
 	duration = 10,
 	disabled = false,
-	extra: { fps?: number; children?: Snippet; view?: TimeRange; playhead?: number } = {}
+	extra: {
+		fps?: number;
+		children?: Snippet;
+		view?: TimeRange;
+		playhead?: number;
+		pictures?: PictureGrid;
+	} = {}
 ) {
 	const changes: TimeRange[] = [];
 	const onscrub = vi.fn();
@@ -20,7 +27,8 @@ function setup(
 		onscrub,
 		fps: extra.fps,
 		view: extra.view ?? null,
-		playhead: extra.playhead ?? null
+		playhead: extra.playhead ?? null,
+		pictures: extra.pictures ?? null
 	});
 	render(RangeSlider, {
 		get range() {
@@ -38,6 +46,9 @@ function setup(
 		},
 		get playhead() {
 			return props.playhead;
+		},
+		get pictures() {
+			return props.pictures;
 		},
 		get duration() {
 			return props.duration;
@@ -215,6 +226,60 @@ describe('RangeSlider', () => {
 	it('darkens nothing when there is nothing behind it', () => {
 		const { track } = setup();
 		expect(track.querySelectorAll('.dim')).toHaveLength(0);
+	});
+});
+
+describe("RangeSlider, once it knows where the video's pictures start", () => {
+	// 25 fps: a picture every 40 ms.
+	const pictures = { origin: 0, interval: 0.04 };
+
+	it('steps an end one picture at a time with the arrow keys', async () => {
+		const { props, start, end, onscrub } = setup({ start: 2, end: 5 }, 10, false, { pictures });
+		await fireEvent.keyDown(start, { key: 'ArrowRight' });
+		expect(props.range).toEqual({ start: 2.04, end: 5 });
+		expect(onscrub).toHaveBeenLastCalledWith('start', 2.04);
+		await fireEvent.keyDown(start, { key: 'ArrowUp' });
+		expect(props.range.start).toBe(2.08);
+		await fireEvent.keyDown(start, { key: 'ArrowLeft' });
+		expect(props.range.start).toBe(2.04);
+		await fireEvent.keyDown(end, { key: 'ArrowDown' });
+		expect(props.range).toEqual({ start: 2.04, end: 4.96 });
+	});
+
+	it('steps from mid-picture to the next or the previous one', async () => {
+		const { props, start } = setup({ start: 2.01, end: 5 }, 10, false, { pictures });
+		await fireEvent.keyDown(start, { key: 'ArrowLeft' });
+		expect(props.range.start).toBe(1.96);
+		props.range = { start: 2.01, end: 5 };
+		await fireEvent.keyDown(start, { key: 'ArrowRight' });
+		expect(props.range.start).toBe(2.04);
+	});
+
+	it('still steps seconds with Shift and the Page keys', async () => {
+		const { props, start, end } = setup({ start: 2, end: 5 }, 10, false, { pictures });
+		await fireEvent.keyDown(start, { key: 'ArrowRight', shiftKey: true });
+		expect(props.range.start).toBe(3);
+		await fireEvent.keyDown(end, { key: 'PageUp' });
+		expect(props.range.end).toBe(6);
+	});
+
+	it('moves the whole range a picture at a time by its tab, its length kept', async () => {
+		const { props, tab } = setup({ start: 2.01, end: 5.01 }, 10, false, { pictures });
+		await fireEvent.keyDown(tab, { key: 'ArrowLeft' });
+		expect(props.range).toEqual({ start: 1.96, end: 4.96 });
+		await fireEvent.keyDown(tab, { key: 'ArrowRight' });
+		expect(props.range).toEqual({ start: 2, end: 5 });
+	});
+
+	it('lands on picture starts kept to the millisecond, however many steps', async () => {
+		// The fixture clip's rate: 12 fps, a picture every 83⅓ ms.
+		const twelve = { origin: 0, interval: 1 / 12 };
+		const { props, start, end } = setup({ start: 0, end: 2 }, 2, false, { pictures: twelve });
+		for (let i = 0; i < 6; i++) await fireEvent.keyDown(start, { key: 'ArrowRight' });
+		for (let i = 0; i < 6; i++) await fireEvent.keyDown(end, { key: 'ArrowLeft' });
+		expect(props.range).toEqual({ start: 0.5, end: 1.5 });
+		await fireEvent.keyDown(start, { key: 'ArrowRight' });
+		expect(props.range.start).toBe(0.583);
 	});
 });
 

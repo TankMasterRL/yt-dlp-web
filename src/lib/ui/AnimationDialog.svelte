@@ -36,7 +36,7 @@
 		videoFrames,
 		videoMetadata
 	} from '$lib/animate/frames';
-	import { frameRate } from '$lib/animate/grid';
+	import { frameRate, stepGrid, type FrameGrid } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
 	import Filmstrip from './Filmstrip.svelte';
@@ -67,6 +67,12 @@
 	let playhead = $state(0);
 	/** The stretch of the video the frame timeline is zoomed in on (null: all of it). */
 	let view = $state<TimeRange | null>(null);
+	/** Where the video's pictures start, as measured with its frame rate (null: not known). */
+	let sourceGrid = $state.raw<FrameGrid | null>(null);
+	/** Once the video's frame rate is known, the arrow keys step the range a picture at a time. */
+	const pictures = $derived(
+		sourceGrid && editor.sourceFps ? stepGrid(sourceGrid, editor.sourceFps) : null
+	);
 	let previewing = $state(false);
 	let resultUrl = $state<string | null>(null);
 	/** Whether the browser failed to show the result (most cannot show JPEG XL yet). */
@@ -109,9 +115,10 @@
 				editor.setMedia(media);
 				view = null;
 				measuring = true;
-				void sourceFps(media.duration, opening.signal).then((fps) => {
+				void pictureGrid(media.duration, opening.signal).then((grid) => {
 					if (opening.signal.aborted) return;
-					editor.learnSourceFps(fps);
+					sourceGrid = grid;
+					editor.learnSourceFps(grid && frameRate(grid));
 					measuring = false;
 				});
 			})
@@ -130,12 +137,13 @@
 	const RATE_TIMEOUT_MS = 4000;
 
 	/**
-	 * The video's own frame rate, from moments of its first seconds playing (enough to
-	 * tell 29.97 fps from 30); null when the browser can't tell, or not soon. Played in
-	 * a <video> of its own, never the dialog's: meanwhile that one shows the range's
-	 * edges as they are scrubbed, previews, and takes the animation's frames.
+	 * Where the video's own pictures start, and so its frame rate, from moments of its
+	 * first seconds playing (enough to tell 29.97 fps from 30); null when the browser
+	 * can't tell, or not soon. Played in a <video> of its own, never the dialog's:
+	 * meanwhile that one shows the range's edges as they are scrubbed, previews, and
+	 * takes the animation's frames.
 	 */
-	async function sourceFps(duration: number, signal: AbortSignal): Promise<number | null> {
+	async function pictureGrid(duration: number, signal: AbortSignal): Promise<FrameGrid | null> {
 		const opened = openVideo(file);
 		const looking = new AbortController();
 		const stop = () => looking.abort(signal.reason);
@@ -147,8 +155,7 @@
 		try {
 			await mediaMetadata(opened.video, looking.signal);
 			const range = { start: 0, end: Math.min(duration, 4) };
-			const grid = await learnGrid(opened.video, range, looking.signal);
-			return grid && frameRate(grid);
+			return await learnGrid(opened.video, range, looking.signal);
 		} catch {
 			return null;
 		} finally {
@@ -257,6 +264,7 @@
 						duration={editor.media.duration}
 						{playhead}
 						fps={editor.fps}
+						{pictures}
 						disabled={editor.rendering}
 						onscrub={show}
 					>
