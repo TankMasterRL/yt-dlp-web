@@ -678,7 +678,7 @@
 	 */
 	@media (max-height: 32rem) and (min-aspect-ratio: 4 / 3) {
 		dialog {
-			--stage-height: calc(100dvh - 12.5rem);
+			--stage-height: calc(100dvh - 13.75rem);
 		}
 
 		header {

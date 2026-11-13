@@ -534,3 +534,57 @@ test.describe('the frame timeline', () => {
 		expect(await violations()).toEqual([]);
 	});
 });
+
+test.describe('the time range', () => {
+	test('moves whole by the tab under it, its length kept', async ({ page }) => {
+		const violations = await recordCspViolations(page);
+		// Straight from disk: no engine, no private storage, in every browser.
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const track = dialog.getByRole('group', { name: 'Time range' });
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		const tab = dialog.getByRole('slider', { name: 'Move the range' });
+		await expect(end).toHaveAttribute('aria-valuemax', '2', { timeout: 15_000 });
+		// 0.5 s to 1.0 s of the 2 s clip.
+		for (let i = 0; i < 5; i++) await start.press('ArrowRight');
+		for (let i = 0; i < 10; i++) await end.press('ArrowLeft');
+		await expect(tab).toHaveAttribute('aria-valuetext', '0:00.5 to 0:01.0');
+
+		// It hangs under the middle of the range.
+		const center = async (locator: Locator) => {
+			const { x, width } = (await locator.boundingBox())!;
+			return x + width / 2;
+		};
+		const middle = ((await center(start)) + (await center(end))) / 2;
+		expect(Math.abs((await center(tab)) - middle)).toBeLessThanOrEqual(1);
+		const box = (await tab.boundingBox())!;
+		const trackBox = (await track.boundingBox())!;
+		expect(box.y).toBeGreaterThanOrEqual(trackBox.y + trackBox.height - 1);
+
+		// Dragged a quarter of the track to the right: half a second later, as long as before.
+		const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x + trackBox.width / 4, y, { steps: 8 });
+		await page.mouse.up();
+		await expect(tab).toBeFocused();
+		await expect(dialog.getByText('Length 0.5 s')).toBeVisible();
+		// To two screen pixels' worth (pointer events may say where in whole pixels).
+		const moved = Number(await start.getAttribute('aria-valuenow'));
+		expect(Math.abs(moved - 1)).toBeLessThanOrEqual(4 / trackBox.width + 0.001);
+		expect(Number(await end.getAttribute('aria-valuenow'))).toBeCloseTo(moved + 0.5, 3);
+
+		// From the keyboard, to either end of the clip.
+		await tab.press('End');
+		await expect(tab).toHaveAttribute('aria-valuetext', '0:01.5 to 0:02.0');
+		await tab.press('Home');
+		await expect(tab).toHaveAttribute('aria-valuetext', '0:00.0 to 0:00.5');
+		await tab.press('ArrowRight');
+		await expect(start).toHaveAttribute('aria-valuenow', '0.1');
+		await expect(end).toHaveAttribute('aria-valuenow', '0.6');
+
+		expect(await violations()).toEqual([]);
+	});
+});

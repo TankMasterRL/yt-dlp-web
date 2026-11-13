@@ -43,7 +43,8 @@ function setup(
 		onscrub,
 		track,
 		start: screen.getByRole('slider', { name: 'Start' }),
-		end: screen.getByRole('slider', { name: 'End' })
+		end: screen.getByRole('slider', { name: 'End' }),
+		tab: screen.getByRole('slider', { name: 'Move the range' })
 	};
 }
 
@@ -104,6 +105,62 @@ describe('RangeSlider', () => {
 		await fireEvent.pointerUp(window, { pointerId: 1 });
 	});
 
+	it('has a tab under the middle of the range, a slider of where the range starts', async () => {
+		const { props, tab } = setup();
+		expect(tab).toHaveAttribute('aria-valuenow', '2');
+		expect(tab).toHaveAttribute('aria-valuemin', '0');
+		// As late as a 3 s range can start in a 10 s video.
+		expect(tab).toHaveAttribute('aria-valuemax', '7');
+		expect(tab).toHaveAttribute('aria-valuetext', '0:02.0 to 0:05.0');
+		expect(tab.style.getPropertyValue('--middle')).toBe('35%');
+		props.range = { start: 6, end: 10 };
+		flushSync();
+		expect(tab.style.getPropertyValue('--middle')).toBe('80%');
+		expect(tab).toHaveAttribute('aria-valuemax', '6');
+	});
+
+	it('drags the whole range by its tab, keeping its length, until released', async () => {
+		const { props, tab, onscrub } = setup();
+		// Pressed where it is, the range stays: the press is the tab's, not the track's.
+		await fireEvent.pointerDown(tab, { clientX: 170, button: 0, pointerId: 1 });
+		expect(props.range).toEqual({ start: 2, end: 5 });
+		expect(tab).toHaveFocus();
+		await fireEvent.pointerMove(window, { clientX: 150, pointerId: 1 });
+		expect(props.range).toEqual({ start: 1, end: 4 });
+		expect(onscrub).toHaveBeenLastCalledWith('start', 1);
+		// No further than the video goes, either way.
+		await fireEvent.pointerMove(window, { clientX: 0, pointerId: 1 });
+		expect(props.range).toEqual({ start: 0, end: 3 });
+		await fireEvent.pointerMove(window, { clientX: 500, pointerId: 1 });
+		expect(props.range).toEqual({ start: 7, end: 10 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 170, pointerId: 1 });
+		expect(props.range).toEqual({ start: 7, end: 10 });
+	});
+
+	it('moves the whole range from the keyboard: tenths, seconds with Shift or Page keys, to either end', async () => {
+		const { props, tab, onscrub } = setup();
+		await fireEvent.keyDown(tab, { key: 'ArrowRight' });
+		expect(props.range).toEqual({ start: 2.1, end: 5.1 });
+		expect(onscrub).toHaveBeenLastCalledWith('start', 2.1);
+		await fireEvent.keyDown(tab, { key: 'ArrowLeft', shiftKey: true });
+		expect(props.range).toEqual({ start: 1.1, end: 4.1 });
+		await fireEvent.keyDown(tab, { key: 'PageUp' });
+		expect(props.range).toEqual({ start: 2.1, end: 5.1 });
+		await fireEvent.keyDown(tab, { key: 'ArrowDown' });
+		expect(props.range).toEqual({ start: 2, end: 5 });
+		await fireEvent.keyDown(tab, { key: 'End' });
+		expect(props.range).toEqual({ start: 7, end: 10 });
+		await fireEvent.keyDown(tab, { key: 'Home' });
+		expect(props.range).toEqual({ start: 0, end: 3 });
+		expect(onscrub).toHaveBeenLastCalledWith('start', 0);
+		// Already there: no change, nothing to show.
+		onscrub.mockClear();
+		await fireEvent.keyDown(tab, { key: 'PageDown' });
+		expect(props.range).toEqual({ start: 0, end: 3 });
+		expect(onscrub).not.toHaveBeenCalled();
+	});
+
 	it('moves the nearer end to where the track is pressed', async () => {
 		const { props, track } = setup();
 		await fireEvent.pointerDown(track, { clientX: 290, button: 0, pointerId: 1 });
@@ -115,12 +172,18 @@ describe('RangeSlider', () => {
 	});
 
 	it('does nothing while disabled', async () => {
-		const { changes, start, track } = setup(undefined, undefined, true);
+		const { changes, start, tab, track } = setup(undefined, undefined, true);
 		await fireEvent.keyDown(start, { key: 'ArrowRight' });
+		await fireEvent.keyDown(tab, { key: 'ArrowRight' });
 		await fireEvent.pointerDown(track, { clientX: 290, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 250, pointerId: 1 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		await fireEvent.pointerDown(tab, { clientX: 170, button: 0, pointerId: 1 });
 		await fireEvent.pointerMove(window, { clientX: 250, pointerId: 1 });
 		expect(changes).toEqual([]);
 		expect(start).toHaveAttribute('aria-disabled', 'true');
+		expect(tab).toHaveAttribute('aria-disabled', 'true');
+		expect(tab).toHaveAttribute('tabindex', '-1');
 	});
 
 	it('shows what it is given across the track, darkened outside the range', () => {
