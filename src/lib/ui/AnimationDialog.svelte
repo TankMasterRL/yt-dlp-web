@@ -23,7 +23,8 @@
 		evenRates,
 		formatClipTime,
 		formatFps,
-		fullFrame
+		fullFrame,
+		type TimeRange
 	} from '$lib/animate/clip';
 	import { workerEncoder } from '$lib/animate/client';
 	import { AnimationEditor } from '$lib/animate/editor.svelte';
@@ -35,13 +36,14 @@
 		videoFrames,
 		videoMetadata
 	} from '$lib/animate/frames';
-	import { frameRate } from '$lib/animate/grid';
+	import { frameRate, pictureMiddle, stepGrid, type FrameGrid } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
 	import Filmstrip from './Filmstrip.svelte';
 	import RangeSlider from './RangeSlider.svelte';
 	import { saveFile } from './save';
 	import Spinner from './Spinner.svelte';
+	import ZoomBar from './ZoomBar.svelte';
 
 	interface Props {
 		/** The video: from the library's private storage, or a file opened straight from disk. */
@@ -63,6 +65,14 @@
 	let measuring = $state(false);
 	/** Where the video is, shown on the time range. */
 	let playhead = $state(0);
+	/** The stretch of the video the frame timeline is zoomed in on (null: all of it). */
+	let view = $state<TimeRange | null>(null);
+	/** Where the video's pictures start, as measured with its frame rate (null: not known). */
+	let sourceGrid = $state.raw<FrameGrid | null>(null);
+	/** Once the video's frame rate is known, the arrow keys step the range a picture at a time. */
+	const pictures = $derived(
+		sourceGrid && editor.sourceFps ? stepGrid(sourceGrid, editor.sourceFps) : null
+	);
 	let previewing = $state(false);
 	let resultUrl = $state<string | null>(null);
 	/** Whether the browser failed to show the result (most cannot show JPEG XL yet). */
@@ -103,10 +113,12 @@
 			.then((media) => {
 				if (opening.signal.aborted) return;
 				editor.setMedia(media);
+				view = null;
 				measuring = true;
-				void sourceFps(media.duration, opening.signal).then((fps) => {
+				void pictureGrid(media.duration, opening.signal).then((grid) => {
 					if (opening.signal.aborted) return;
-					editor.learnSourceFps(fps);
+					sourceGrid = grid;
+					editor.learnSourceFps(grid && frameRate(grid));
 					measuring = false;
 				});
 			})
@@ -125,12 +137,13 @@
 	const RATE_TIMEOUT_MS = 4000;
 
 	/**
-	 * The video's own frame rate, from moments of its first seconds playing (enough to
-	 * tell 29.97 fps from 30); null when the browser can't tell, or not soon. Played in
-	 * a <video> of its own, never the dialog's: meanwhile that one shows the range's
-	 * edges as they are scrubbed, previews, and takes the animation's frames.
+	 * Where the video's own pictures start, and so its frame rate, from moments of its
+	 * first seconds playing (enough to tell 29.97 fps from 30); null when the browser
+	 * can't tell, or not soon. Played in a <video> of its own, never the dialog's:
+	 * meanwhile that one shows the range's edges as they are scrubbed, previews, and
+	 * takes the animation's frames.
 	 */
-	async function sourceFps(duration: number, signal: AbortSignal): Promise<number | null> {
+	async function pictureGrid(duration: number, signal: AbortSignal): Promise<FrameGrid | null> {
 		const opened = openVideo(file);
 		const looking = new AbortController();
 		const stop = () => looking.abort(signal.reason);
@@ -142,8 +155,7 @@
 		try {
 			await mediaMetadata(opened.video, looking.signal);
 			const range = { start: 0, end: Math.min(duration, 4) };
-			const grid = await learnGrid(opened.video, range, looking.signal);
-			return grid && frameRate(grid);
+			return await learnGrid(opened.video, range, looking.signal);
 		} catch {
 			return null;
 		} finally {
@@ -166,10 +178,15 @@
 		};
 	});
 
-	/** Show the frame an edge of the range lands on: the first one, or the last one taken. */
+	/**
+	 * Show the frame an edge of the range lands on: the first one, or the last one taken —
+	 * from the middle of its picture, once they are known (an edge stepped from picture to
+	 * picture sits where one starts, and a seek there may show the one before).
+	 */
 	function show(edge: 'start' | 'end', time: number) {
 		stopPreview();
-		video.currentTime = edge === 'end' ? Math.max(editor.range.start, time - 1 / editor.fps) : time;
+		const at = edge === 'end' ? Math.max(editor.range.start, time - 1 / editor.fps) : time;
+		video.currentTime = pictures ? pictureMiddle(pictures, at) : at;
 	}
 
 	function startPreview() {
@@ -245,16 +262,21 @@
 				{/if}
 			</div>
 			{#if editor.media}
-				<RangeSlider
-					bind:range={editor.range}
-					duration={editor.media.duration}
-					{playhead}
-					fps={editor.fps}
-					disabled={editor.rendering}
-					onscrub={show}
-				>
-					<Filmstrip {file} media={editor.media} />
-				</RangeSlider>
+				<div class="timeline">
+					<RangeSlider
+						bind:range={editor.range}
+						bind:view
+						duration={editor.media.duration}
+						{playhead}
+						fps={editor.fps}
+						{pictures}
+						disabled={editor.rendering}
+						onscrub={show}
+					>
+						<Filmstrip {file} media={editor.media} {view} />
+					</RangeSlider>
+					<ZoomBar bind:view duration={editor.media.duration} range={editor.range} />
+				</div>
 				<p class="readout" aria-live="polite">
 					<span>Start <strong>{formatClipTime(editor.range.start)}</strong></span>
 					<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
@@ -510,6 +532,13 @@
 		pointer-events: none;
 	}
 
+	/* The time range over its frame timeline, and the zoom under it. */
+	.timeline {
+		display: grid;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+
 	.settings {
 		display: grid;
 		gap: 0.75rem;
@@ -678,7 +707,7 @@
 	 */
 	@media (max-height: 32rem) and (min-aspect-ratio: 4 / 3) {
 		dialog {
-			--stage-height: calc(100dvh - 12.5rem);
+			--stage-height: calc(100dvh - 15.5rem);
 		}
 
 		header {

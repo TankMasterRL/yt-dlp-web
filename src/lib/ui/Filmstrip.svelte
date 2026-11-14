@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Size } from '$lib/animate/clip';
+	import type { Size, TimeRange } from '$lib/animate/clip';
 	import { drawTiles, tileCount, tileSize, tileTimes } from '$lib/animate/filmstrip';
 	import { openVideo, type OpenedVideo, type VideoMetadata } from '$lib/animate/frames';
 	import { observeSize } from './size';
@@ -9,11 +9,13 @@
 		file: Blob;
 		/** Its size and length. */
 		media: VideoMetadata;
+		/** The stretch of it the timeline is zoomed in on (null: all of it). */
+		view?: TimeRange | null;
 		/** Opens the file in a <video> of the strip's own (tests pass a fake). */
 		open?: (file: Blob) => OpenedVideo;
 	}
 
-	let { file, media, open = openVideo }: Props = $props();
+	let { file, media, view = null, open = openVideo }: Props = $props();
 
 	let element: HTMLDivElement;
 	/** CSS pixels; nothing is taken until it is laid out. */
@@ -25,7 +27,7 @@
 	// Numbers first, so a resize that changes neither takes nothing again.
 	const count = $derived(tileCount(strip, aspect));
 	const height = $derived(strip.height);
-	const times = $derived(tileTimes(media.duration, count));
+	const times = $derived(tileTimes(view ?? { start: 0, end: media.duration }, count));
 	const size = $derived(tileSize(height, aspect, devicePixelRatio));
 
 	// Never the dialog's own video, which meanwhile shows the range's edges, previews and
@@ -40,14 +42,16 @@
 	});
 
 	// Each picture on its canvas, left to right; again whenever the strip holds another number
-	// of them, or grows taller.
+	// of them, grows taller, or shows another stretch (a zoom being dragged starts afresh at each
+	// move, so only where it stops is taken in full).
 	$effect(() => {
 		if (!video || !times.length) return;
 		const canvases = [...element.querySelectorAll('canvas')];
 		const tiles = times.map((time, i) => {
-			// Sized here, not in the markup: resizing a canvas clears it, and then it is drawn again.
-			canvases[i].width = size.width;
-			canvases[i].height = size.height;
+			// Sized here, not in the markup, and only when the size changes: resizing a canvas, even
+			// to the size it has, clears it — and the picture it shows stays until the next is in.
+			if (canvases[i].width !== size.width) canvases[i].width = size.width;
+			if (canvases[i].height !== size.height) canvases[i].height = size.height;
 			return { time, canvas: canvases[i] };
 		});
 		const taking = new AbortController();
@@ -65,8 +69,9 @@
 	data-taken={taken}
 	{@attach observeSize((box) => (strip = box))}
 >
-	{#each times as time (time)}
-		<canvas data-time={time}></canvas>
+	<!-- By place, not time: a canvas keeps its picture, faded, until the one for its new time is in. -->
+	{#each times as time, i (i)}
+		<canvas data-time={time} class:stale={i >= taken}></canvas>
 	{/each}
 </div>
 
@@ -119,5 +124,10 @@
 		height: 100%;
 		display: block;
 		object-fit: cover;
+	}
+
+	/* A picture of where the strip was, until this one's is in; the pulse behind shows through. */
+	canvas.stale {
+		opacity: 0.45;
 	}
 </style>

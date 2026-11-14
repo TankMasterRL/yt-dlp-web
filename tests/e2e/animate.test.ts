@@ -124,15 +124,25 @@ async function openEditor(page: Page): Promise<Locator> {
 }
 
 /**
- * 0.5 s to 1.5 s from the keyboard, the top left quarter by dragging the
- * bottom right corner to the middle, 10 fps, full size. Returns the crop.
+ * Waits until the editor knows the clip's own rate, 12 fps: from then on, the
+ * arrow keys step the time range a picture (1/12 s) at a time.
+ */
+async function rateKnown(dialog: Locator) {
+	await expect(dialog.getByText('Video 12 fps')).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * 0.5 s to 1.5 s from the keyboard, six pictures in from either end; the top
+ * left quarter by dragging the bottom right corner to the middle, 10 fps, full
+ * size. Returns the crop.
  */
 async function chooseRangeAndCrop(page: Page, dialog: Locator) {
 	const start = dialog.getByRole('slider', { name: 'Start' });
 	const end = dialog.getByRole('slider', { name: 'End' });
-	for (let i = 0; i < 5; i++) await start.press('ArrowRight');
+	await rateKnown(dialog);
+	for (let i = 0; i < 6; i++) await start.press('ArrowRight');
 	await end.press('End');
-	for (let i = 0; i < 5; i++) await end.press('ArrowLeft');
+	for (let i = 0; i < 6; i++) await end.press('ArrowLeft');
 	await expect(start).toHaveAttribute('aria-valuenow', '0.5');
 	await expect(end).toHaveAttribute('aria-valuenow', '1.5');
 	await expect(dialog.getByText('Length 1.0 s')).toBeVisible();
@@ -440,6 +450,78 @@ test.describe('animated images from a video in the library', () => {
 	});
 });
 
+/** Waits until every picture of the strip is drawn, at the times it should show. */
+async function stripDrawn(strip: Locator, times?: (count: number) => number[]) {
+	const tiles = strip.locator('canvas');
+	await expect
+		.poll(
+			async () => {
+				const count = await tiles.count();
+				if (!(count > 0 && (await strip.getAttribute('data-taken')) === String(count)))
+					return false;
+				if (!times) return true;
+				const shown = await tiles.evaluateAll((all) => all.map((c) => Number(c.dataset.time)));
+				return JSON.stringify(shown) === JSON.stringify(times(count));
+			},
+			{ timeout: 15_000, message: 'every picture of the strip drawn' }
+		)
+		.toBe(true);
+}
+
+/** When each of `count` pictures across `from`–`to` is taken: the middle of its stretch. */
+const tileTimes = (from: number, to: number, count: number) =>
+	Array.from(
+		{ length: count },
+		(_, i) => Math.round((from + ((i + 0.5) * (to - from)) / count) * 1e6) / 1e6
+	);
+
+/**
+ * Each tile is the picture on screen at its time, the middle of the stretch it stands for:
+ * the closest of all the clip's pictures (as ffmpeg.wasm decodes them, at the tile's size),
+ * and close to it. (Chromium lands at 4-5, WebKit 5-7 and Firefox, whose colors are
+ * further from FFmpeg's, 8-11; the next closest at least 2 more, a blank tile 120.)
+ * Returns the tiles' times.
+ */
+async function expectTilesOfTheirTimes(strip: Locator): Promise<number[]> {
+	const pictures = await probe('read the frame timeline', () =>
+		strip.evaluate((element) =>
+			[...element.querySelectorAll('canvas')].map((canvas) => ({
+				time: Number(canvas.dataset.time),
+				width: canvas.width,
+				height: canvas.height,
+				pixels: [...canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data]
+			}))
+		)
+	);
+	const { width, height } = pictures[0];
+	const box = (await strip.boundingBox())!;
+	expect(pictures.length).toBe(Math.ceil(box.width / (box.height * (640 / 360))));
+	const source = await scaledFixtureFrames(width, height);
+	for (const { time, pixels } of pictures) {
+		const differences = source.map((frame) => rmsDifference(pixels, frame));
+		const closest = differences.indexOf(Math.min(...differences));
+		const from = `tile at ${time} s, from each picture: ${differences.map((d) => d.toFixed(1)).join(' ')}`;
+		expect(picturesAt(time), from).toContain(closest);
+		expect(differences[closest], from).toBeLessThan(15);
+	}
+	return pictures.map((p) => p.time);
+}
+
+const center = async (locator: Locator) => {
+	const { x, width } = (await locator.boundingBox())!;
+	return x + width / 2;
+};
+
+/** Drags `handle` across to `x`, from its middle. */
+async function dragTo(page: Page, handle: Locator, x: number) {
+	const box = (await handle.boundingBox())!;
+	const y = box.y + box.height / 2;
+	await page.mouse.move(box.x + box.width / 2, y);
+	await page.mouse.down();
+	await page.mouse.move(x, y, { steps: 8 });
+	await page.mouse.up();
+}
+
 test.describe('the frame timeline', () => {
 	// Pictures drawn at twice the size: the low-bitrate encode left some of the clip's frames
 	// alike but for their numbers, which need the pixels.
@@ -455,45 +537,10 @@ test.describe('the frame timeline', () => {
 		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
 		const track = dialog.getByRole('group', { name: 'Time range' });
 		const strip = track.locator('.filmstrip');
-		const tiles = strip.locator('canvas');
-		await expect
-			.poll(
-				async () => {
-					const count = await tiles.count();
-					return count > 0 && (await strip.getAttribute('data-taken')) === String(count);
-				},
-				{ timeout: 15_000, message: 'every picture of the strip drawn' }
-			)
-			.toBe(true);
-
-		// Each tile is the picture on screen at its time, the middle of the stretch it stands for:
-		// the closest of all the clip's pictures (as ffmpeg.wasm decodes them, at the tile's size),
-		// and close to it. (Chromium lands at 4-5, WebKit 5-7 and Firefox, whose colors are
-		// further from FFmpeg's, 8-11; the next closest at least 2 more, a blank tile 120.)
-		const pictures = await probe('read the frame timeline', () =>
-			strip.evaluate((element) =>
-				[...element.querySelectorAll('canvas')].map((canvas) => ({
-					time: Number(canvas.dataset.time),
-					width: canvas.width,
-					height: canvas.height,
-					pixels: [...canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data]
-				}))
-			)
-		);
-		const { width, height } = pictures[0];
-		const box = (await strip.boundingBox())!;
-		expect(pictures.length).toBe(Math.ceil(box.width / (box.height * (640 / 360))));
-		expect(pictures.map((p) => p.time)).toEqual(
-			pictures.map((_, i) => Math.round(((i + 0.5) * 2 * 1e6) / pictures.length) / 1e6)
-		);
-		const source = await scaledFixtureFrames(width, height);
-		for (const { time, pixels } of pictures) {
-			const differences = source.map((frame) => rmsDifference(pixels, frame));
-			const closest = differences.indexOf(Math.min(...differences));
-			const from = `tile at ${time} s, from each picture: ${differences.map((d) => d.toFixed(1)).join(' ')}`;
-			expect(picturesAt(time), from).toContain(closest);
-			expect(differences[closest], from).toBeLessThan(15);
-		}
+		await stripDrawn(strip);
+		const times = await expectTilesOfTheirTimes(strip);
+		// Across the whole clip.
+		expect(times).toEqual(tileTimes(0, 2, times.length));
 
 		// A mark where each frame is taken: from the start of the range to its end, as many as the
 		// animation has frames.
@@ -501,10 +548,6 @@ test.describe('the frame timeline', () => {
 		const end = dialog.getByRole('slider', { name: 'End' });
 		const marks = track.locator('.marks');
 		const summary = dialog.locator('#animate-summary');
-		const center = async (locator: Locator) => {
-			const { x, width } = (await locator.boundingBox())!;
-			return x + width / 2;
-		};
 		const expectMarksOfRange = async (frames: number) => {
 			await expect(summary).toContainText(`· ${frames} frames`);
 			await expect(marks).toHaveAttribute('data-frames', String(frames));
@@ -517,7 +560,8 @@ test.describe('the frame timeline', () => {
 		await expect(dialog.getByText('Video 12 fps')).toBeVisible();
 		await expect(dialog.locator('[data-measuring]')).toHaveCount(0);
 		await expectMarksOfRange(24);
-		for (let i = 0; i < 5; i++) await start.press('ArrowRight');
+		// Six pictures in: half a second.
+		for (let i = 0; i < 6; i++) await start.press('ArrowRight');
 		await expectMarksOfRange(18);
 		await dialog.getByLabel('Frame rate').selectOption({ label: '10 fps' });
 		await expectMarksOfRange(15);
@@ -530,6 +574,178 @@ test.describe('the frame timeline', () => {
 		await expect
 			.poll(async () => Math.abs(Number(await start.getAttribute('aria-valuenow')) - 0.2))
 			.toBeLessThanOrEqual(2 / trackWidth + 0.001);
+
+		expect(await violations()).toEqual([]);
+	});
+
+	test('zooms in on a stretch by the handles under it, to set the range picture by picture', async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const track = dialog.getByRole('group', { name: 'Time range' });
+		const strip = track.locator('.filmstrip');
+		const zoom = dialog.getByRole('group', { name: 'Timeline zoom' });
+		const zoomFrom = dialog.getByRole('slider', { name: 'Zoom from' });
+		const zoomTo = dialog.getByRole('slider', { name: 'Zoom to' });
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		const value = async (slider: Locator) => Number(await slider.getAttribute('aria-valuenow'));
+		await expect(end).toHaveAttribute('aria-valuemax', '2', { timeout: 15_000 });
+		// Zoomed out, the zoom shows all of the clip.
+		await expect(zoomFrom).toHaveAttribute('aria-valuenow', '0');
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '2');
+		await stripDrawn(strip);
+		// 0.5 s to 1.5 s, six pictures in from either end.
+		await rateKnown(dialog);
+		for (let i = 0; i < 6; i++) await start.press('ArrowRight');
+		for (let i = 0; i < 6; i++) await end.press('ArrowLeft');
+
+		// Its ends dragged an eighth and five eighths of the way along: 0.25 s to 1.25 s, to a pixel.
+		// The range's start is well inside that, its end (1.5 s) beyond it.
+		const bar = (await zoom.boundingBox())!;
+		const barPixel = 2 / bar.width;
+		await dragTo(page, zoomTo, bar.x + bar.width * 0.625);
+		await dragTo(page, zoomFrom, bar.x + bar.width * 0.125);
+		const [from, to] = [await value(zoomFrom), await value(zoomTo)];
+		expect(Math.abs(from - 0.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
+		expect(Math.abs(to - 1.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
+
+		// The timeline's pictures are now of that stretch alone, taken afresh.
+		await stripDrawn(strip, (count) => tileTimes(from, to, count));
+		await expectTilesOfTheirTimes(strip);
+
+		// The range's start stands where its time is in the stretch; its end, outside, is hidden.
+		const box = (await track.boundingBox())!;
+		const at = (time: number) => box.x + ((time - from) / (to - from)) * box.width;
+		expect(Math.abs((await center(start)) - at(0.5))).toBeLessThanOrEqual(1.5);
+		await expect(end).toHaveClass(/outside/);
+
+		// A tenth of the track is now a tenth of a second, not a fifth: finer by the zoom.
+		await dragTo(page, start, at(0.5) + box.width / 10);
+		const pixel = (to - from) / box.width;
+		expect(Math.abs((await value(start)) - (0.5 + (to - from) / 10))).toBeLessThanOrEqual(
+			2 * pixel + 0.001
+		);
+		await expect(dialog.getByText(/^Length 0\.9 s$/)).toBeVisible();
+		// Dragging never moves the stretch shown.
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', String(to));
+
+		// Focus from the keyboard on the hidden end moves the timeline along to show it.
+		await end.focus();
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '1.5');
+		await expect(end).not.toHaveClass(/outside/);
+		await expect(end).toBeFocused();
+
+		expect(await violations()).toEqual([]);
+	});
+});
+
+test.describe('the time range', () => {
+	test('moves whole by the tab under it, its length kept', async ({ page }) => {
+		const violations = await recordCspViolations(page);
+		// Straight from disk: no engine, no private storage, in every browser.
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const track = dialog.getByRole('group', { name: 'Time range' });
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		const tab = dialog.getByRole('slider', { name: 'Move the range' });
+		await expect(end).toHaveAttribute('aria-valuemax', '2', { timeout: 15_000 });
+		// 0.5 s to 1.0 s of the 2 s clip: six pictures in, and twelve back from the end.
+		await rateKnown(dialog);
+		for (let i = 0; i < 6; i++) await start.press('ArrowRight');
+		for (let i = 0; i < 12; i++) await end.press('ArrowLeft');
+		await expect(tab).toHaveAttribute('aria-valuetext', '0:00.5 to 0:01.0');
+
+		// It hangs under the middle of the range.
+		const center = async (locator: Locator) => {
+			const { x, width } = (await locator.boundingBox())!;
+			return x + width / 2;
+		};
+		const middle = ((await center(start)) + (await center(end))) / 2;
+		expect(Math.abs((await center(tab)) - middle)).toBeLessThanOrEqual(1);
+		const box = (await tab.boundingBox())!;
+		const trackBox = (await track.boundingBox())!;
+		expect(box.y).toBeGreaterThanOrEqual(trackBox.y + trackBox.height - 1);
+
+		// Dragged a quarter of the track to the right: half a second later, as long as before.
+		const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x + trackBox.width / 4, y, { steps: 8 });
+		await page.mouse.up();
+		await expect(tab).toBeFocused();
+		await expect(dialog.getByText('Length 0.5 s')).toBeVisible();
+		// To two screen pixels' worth (pointer events may say where in whole pixels).
+		const moved = Number(await start.getAttribute('aria-valuenow'));
+		expect(Math.abs(moved - 1)).toBeLessThanOrEqual(4 / trackBox.width + 0.001);
+		expect(Number(await end.getAttribute('aria-valuenow'))).toBeCloseTo(moved + 0.5, 3);
+
+		// From the keyboard, to either end of the clip.
+		await tab.press('End');
+		await expect(tab).toHaveAttribute('aria-valuetext', '0:01.5 to 0:02.0');
+		await tab.press('Home');
+		await expect(tab).toHaveAttribute('aria-valuetext', '0:00.0 to 0:00.5');
+		// An arrow moves it a picture.
+		await tab.press('ArrowRight');
+		await expect(start).toHaveAttribute('aria-valuenow', String(pictureStart(1)));
+		await expect(end).toHaveAttribute('aria-valuenow', String(pictureStart(1) + 0.5));
+
+		expect(await violations()).toEqual([]);
+	});
+
+	test("steps a picture at a time with the arrow keys, once it knows the clip's rate", async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		await expect(end).toHaveAttribute('aria-valuemax', '2', { timeout: 15_000 });
+		await rateKnown(dialog);
+		// Which of the clip's pictures the stage shows: the closest of them all, as FFmpeg decodes
+		// them, to the stage's video drawn at a quarter of its size.
+		const [width, height] = [160, 90];
+		const source = await scaledFixtureFrames(width, height);
+		const stagePicture = async () => {
+			const pixels = await probe('read the stage', () =>
+				dialog.locator('.stage video').evaluate(
+					(video: HTMLVideoElement, [w, h]) => {
+						const canvas = document.createElement('canvas');
+						canvas.width = w;
+						canvas.height = h;
+						const context = canvas.getContext('2d')!;
+						context.drawImage(video, 0, 0, w, h);
+						return [...context.getImageData(0, 0, w, h).data];
+					},
+					[width, height]
+				)
+			);
+			const differences = source.map((frame) => rmsDifference(pixels, frame));
+			return differences.indexOf(Math.min(...differences));
+		};
+
+		// Each press: where the next picture starts, and the stage shows it.
+		for (let k = 1; k <= 7; k++) {
+			await start.press('ArrowRight');
+			await expect(start).toHaveAttribute('aria-valuenow', String(pictureStart(k)));
+			await expect.poll(stagePicture, { message: `picture ${k} shown` }).toBe(k);
+		}
+		await start.press('ArrowLeft');
+		await expect(start).toHaveAttribute('aria-valuenow', String(pictureStart(6)));
+		await expect.poll(stagePicture, { message: 'picture 6 shown' }).toBe(6);
+		// With Shift, still a second.
+		await start.press('Shift+ArrowRight');
+		await expect(start).toHaveAttribute('aria-valuenow', '1.5');
+		// The end steps back from the clip's end a picture at a time.
+		await end.press('ArrowLeft');
+		await expect(end).toHaveAttribute('aria-valuenow', String(pictureStart(23)));
 
 		expect(await violations()).toEqual([]);
 	});
