@@ -6,6 +6,7 @@ import {
 	frameMiddle,
 	frameRate,
 	gridReach,
+	pictureMiddle,
 	stepFrame,
 	stepGrid,
 	type FrameGrid
@@ -113,6 +114,18 @@ describe('stepFrame', () => {
 		expect(stepFrame(grid, 0.05, 1)).toBeCloseTo(0.09, 9);
 		expect(stepFrame(grid, 0.05, -1)).toBeCloseTo(0.01, 9);
 		expect(stepFrame(grid, 0, 1)).toBeCloseTo(0.01, 9);
+	});
+});
+
+describe('pictureMiddle', () => {
+	it('is where to seek to show the picture on screen at a time: never its start, a seek there may land before it', () => {
+		const twelve = { origin: 0, interval: 1 / 12 };
+		// Picture 1 starts at 83 ms, as WebM keeps it: from there, its middle or a hair before it.
+		expect(pictureMiddle(twelve, 0.083)).toBeCloseTo(1.5 / 12, 9);
+		expect(pictureMiddle(twelve, 0.1)).toBeCloseTo(1.5 / 12, 9);
+		expect(pictureMiddle(twelve, 0.082)).toBeCloseTo(1.5 / 12, 9);
+		expect(pictureMiddle(twelve, 0)).toBeCloseTo(0.5 / 12, 9);
+		expect(pictureMiddle({ origin: 0.01, interval: 0.04 }, 0.05)).toBeCloseTo(0.07, 9);
 	});
 });
 

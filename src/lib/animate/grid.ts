@@ -156,8 +156,17 @@ export function stepFrame(grid: PictureGrid, time: number, steps: number): numbe
 }
 
 /** The middle of picture `index`: half an interval from either edge, where a seek is sure to land on it. */
-export function frameMiddle(grid: FrameGrid, index: number): number {
+export function frameMiddle(grid: PictureGrid, index: number): number {
 	return grid.origin + (index + 0.5) * grid.interval;
+}
+
+/**
+ * Where to seek to show the picture on screen at `time`: its middle. The time
+ * range's ends sit where pictures start, and a seek to a start may show the
+ * picture before it (WebKit does, for WebM's millisecond starts).
+ */
+export function pictureMiddle(grid: PictureGrid, time: number): number {
+	return frameMiddle(grid, frameIndex(grid, time));
 }
 
 /**

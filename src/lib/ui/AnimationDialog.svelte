@@ -36,7 +36,7 @@
 		videoFrames,
 		videoMetadata
 	} from '$lib/animate/frames';
-	import { frameRate, stepGrid, type FrameGrid } from '$lib/animate/grid';
+	import { frameRate, pictureMiddle, stepGrid, type FrameGrid } from '$lib/animate/grid';
 	import { formatBytes } from '$lib/formats';
 	import CropBox from './CropBox.svelte';
 	import Filmstrip from './Filmstrip.svelte';
@@ -178,10 +178,15 @@
 		};
 	});
 
-	/** Show the frame an edge of the range lands on: the first one, or the last one taken. */
+	/**
+	 * Show the frame an edge of the range lands on: the first one, or the last one taken —
+	 * from the middle of its picture, once they are known (an edge stepped from picture to
+	 * picture sits where one starts, and a seek there may show the one before).
+	 */
 	function show(edge: 'start' | 'end', time: number) {
 		stopPreview();
-		video.currentTime = edge === 'end' ? Math.max(editor.range.start, time - 1 / editor.fps) : time;
+		const at = edge === 'end' ? Math.max(editor.range.start, time - 1 / editor.fps) : time;
+		video.currentTime = pictures ? pictureMiddle(pictures, at) : at;
 	}
 
 	function startPreview() {

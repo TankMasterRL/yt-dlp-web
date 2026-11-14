@@ -603,45 +603,41 @@ test.describe('the frame timeline', () => {
 		for (let i = 0; i < 6; i++) await start.press('ArrowRight');
 		for (let i = 0; i < 6; i++) await end.press('ArrowLeft');
 
-		// Its ends dragged to a quarter of the way in from each side: 0.5 s to 1.5 s, to a pixel.
+		// Its ends dragged an eighth and five eighths of the way along: 0.25 s to 1.25 s, to a pixel.
+		// The range's start is well inside that, its end (1.5 s) beyond it.
 		const bar = (await zoom.boundingBox())!;
 		const barPixel = 2 / bar.width;
-		await dragTo(page, zoomTo, bar.x + bar.width * 0.75);
-		await dragTo(page, zoomFrom, bar.x + bar.width * 0.25);
+		await dragTo(page, zoomTo, bar.x + bar.width * 0.625);
+		await dragTo(page, zoomFrom, bar.x + bar.width * 0.125);
 		const [from, to] = [await value(zoomFrom), await value(zoomTo)];
-		expect(Math.abs(from - 0.5)).toBeLessThanOrEqual(2 * barPixel + 0.001);
-		expect(Math.abs(to - 1.5)).toBeLessThanOrEqual(2 * barPixel + 0.001);
+		expect(Math.abs(from - 0.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
+		expect(Math.abs(to - 1.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
 
 		// The timeline's pictures are now of that stretch alone, taken afresh.
 		await stripDrawn(strip, (count) => tileTimes(from, to, count));
 		await expectTilesOfTheirTimes(strip);
 
-		// The range's ends stand where their times are in it: about its two ends.
+		// The range's start stands where its time is in the stretch; its end, outside, is hidden.
 		const box = (await track.boundingBox())!;
 		const at = (time: number) => box.x + ((time - from) / (to - from)) * box.width;
 		expect(Math.abs((await center(start)) - at(0.5))).toBeLessThanOrEqual(1.5);
-		expect(Math.abs((await center(end)) - at(1.5))).toBeLessThanOrEqual(1.5);
+		await expect(end).toHaveClass(/outside/);
 
 		// A tenth of the track is now a tenth of a second, not a fifth: finer by the zoom.
-		await dragTo(page, end, at(1.5) - box.width / 10);
+		await dragTo(page, start, at(0.5) + box.width / 10);
 		const pixel = (to - from) / box.width;
-		expect(Math.abs((await value(end)) - (1.5 - (to - from) / 10))).toBeLessThanOrEqual(
+		expect(Math.abs((await value(start)) - (0.5 + (to - from) / 10))).toBeLessThanOrEqual(
 			2 * pixel + 0.001
 		);
 		await expect(dialog.getByText(/^Length 0\.9 s$/)).toBeVisible();
+		// Dragging never moves the stretch shown.
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', String(to));
 
-		// Zoomed in further on the end of the stretch, the range's start is out of view: hidden,
-		// until the keyboard brings focus to it, and the timeline moves along to show it.
-		await zoomFrom.press('End');
-		await expect(zoomFrom).toHaveAttribute(
-			'aria-valuenow',
-			String(Math.round((to - 0.5) * 1000) / 1000)
-		);
-		await expect(start).toHaveClass(/outside/);
-		await start.focus();
-		await expect(zoomFrom).toHaveAttribute('aria-valuenow', '0.5');
-		await expect(start).not.toHaveClass(/outside/);
-		await expect(start).toBeFocused();
+		// Focus from the keyboard on the hidden end moves the timeline along to show it.
+		await end.focus();
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '1.5');
+		await expect(end).not.toHaveClass(/outside/);
+		await expect(end).toBeFocused();
 
 		expect(await violations()).toEqual([]);
 	});
