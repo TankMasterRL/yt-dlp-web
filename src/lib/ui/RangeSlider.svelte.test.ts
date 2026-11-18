@@ -122,6 +122,32 @@ describe('RangeSlider', () => {
 		expect(props.range.end).toBe(2 + MIN_SPAN);
 	});
 
+	it('drags an end by as far as the pointer moves, wherever on it the press was', async () => {
+		const { props, start, end } = setup();
+		// Inside the range, 5 px before where it ends: the end follows the pointer, it never jumps to it.
+		await fireEvent.pointerDown(end, { clientX: 195, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 245, pointerId: 1 });
+		expect(props.range).toEqual({ start: 2, end: 7.5 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		await fireEvent.pointerDown(start, { clientX: 145, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 125, pointerId: 1 });
+		expect(props.range).toEqual({ start: 1, end: 7.5 });
+		// As far as the video goes.
+		await fireEvent.pointerMove(window, { clientX: 0, pointerId: 1 });
+		expect(props.range.start).toBe(0);
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+	});
+
+	it('stands each end on the range, inside it, where its time is', () => {
+		const { props, start, end } = setup();
+		expect(start.style.getPropertyValue('--at')).toBe('20%');
+		expect(end.style.getPropertyValue('--at')).toBe('50%');
+		props.range = { start: 0, end: 10 };
+		flushSync();
+		expect(start.style.getPropertyValue('--at')).toBe('0%');
+		expect(end.style.getPropertyValue('--at')).toBe('100%');
+	});
+
 	it('drags the whole selection, keeping its length', async () => {
 		const { props, track } = setup();
 		const selection = track.querySelector('.selection')!;
@@ -292,8 +318,8 @@ describe('RangeSlider, zoomed in', () => {
 
 	it('shows the stretch it is zoomed in on across the whole track', () => {
 		const { start, end, tab, track } = zoomed({ start: 2.5, end: 3 });
-		expect(start.style.left).toBe('25%');
-		expect(end.style.left).toBe('50%');
+		expect(start.style.getPropertyValue('--at')).toBe('25%');
+		expect(end.style.getPropertyValue('--at')).toBe('50%');
 		expect(selection(track).style.left).toBe('25%');
 		expect(selection(track).style.width).toBe('25%');
 		expect(tab.style.getPropertyValue('--middle')).toBe('37.5%');
@@ -326,7 +352,7 @@ describe('RangeSlider, zoomed in', () => {
 		const { props, start, end, tab, track } = zoomed({ start: 1, end: 3 });
 		expect(start).toHaveClass('outside');
 		// Kept on the track, where focus would not scroll the dialog sideways to it.
-		expect(start.style.left).toBe('0%');
+		expect(start.style.getPropertyValue('--at')).toBe('0%');
 		expect(end).not.toHaveClass('outside');
 		expect(selection(track).style.left).toBe('0%');
 		expect(selection(track).style.width).toBe('50%');
@@ -337,7 +363,7 @@ describe('RangeSlider, zoomed in', () => {
 		flushSync();
 		expect(start).toHaveClass('outside');
 		expect(end).toHaveClass('outside');
-		expect(end.style.left).toBe('100%');
+		expect(end.style.getPropertyValue('--at')).toBe('100%');
 		expect(tab).toHaveClass('outside');
 		expect(selection(track).style.width).toBe('0%');
 	});
