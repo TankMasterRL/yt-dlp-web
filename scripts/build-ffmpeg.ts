@@ -45,7 +45,7 @@ export const BUILD_INFO_FILE = 'build-info.json';
 export const FFMPEG_REPOSITORY = 'https://github.com/FFmpeg/FFmpeg';
 /** FFmpeg's master branch on 2026-09-23. */
 export const FFMPEG_COMMIT = 'dc52424419177fa2624a614d5edcfe69b53032d2';
-export const EMSCRIPTEN_VERSION = '6.0.10';
+export const EMSCRIPTEN_VERSION = '7.0.0';
 const EMSDK_REPOSITORY = 'https://github.com/emscripten-core/emsdk';
 
 /** The core's own sources, compiled into it. */
