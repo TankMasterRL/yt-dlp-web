@@ -27,7 +27,7 @@ Untrusted JavaScript never runs in the app's origin: YouTube's player code is ev
 ### The document
 
 Every prerendered page carries its policy in a `<meta>` tag. SvelteKit hashes its own inline
-bootstrap script (`kit.csp` hash mode), and the directives come from `csp.config.js`:
+bootstrap script (its `csp` option's hash mode), and the directives come from `csp.config.js`:
 
 - `default-src 'none'`. Only what the app needs is allowed back in.
 - `script-src 'self' 'wasm-unsafe-eval'` — **never `'unsafe-eval'`**. Pyodide and yt-dlp work

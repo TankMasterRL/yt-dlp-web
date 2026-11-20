@@ -4,7 +4,7 @@
  * over an injected ffmpeg core and byte handles: the remux worker passes the
  * real core and OPFS handles, the integration test the real core and memory.
  */
-import type { MergeContainer } from '$lib/formats';
+import type { MergeContainer } from '#lib/formats.ts';
 import { withHandles, type ByteHandle, type EmscriptenFs } from './handle-fs';
 
 /** The slice of `@ffmpeg/core`'s module this uses; the remux core's ffmpeg/pre.js has the same. */

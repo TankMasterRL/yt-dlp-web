@@ -10,7 +10,7 @@
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
 		"isolatedModules": true,
-		// csp.config.js is plain JS (svelte.config.js imports it); its JSDoc types it.
+		// csp.config.js is plain JS (vite.config.ts imports it); its JSDoc types it.
 		"allowJs": true,
 		"checkJs": true
 	},

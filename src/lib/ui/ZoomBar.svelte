@@ -5,7 +5,7 @@
 		moveRange,
 		setRangeEdge,
 		type TimeRange
-	} from '$lib/animate/clip';
+	} from '#lib/animate/clip.ts';
 	import { followPointer } from './drag';
 	import { edgeTarget } from './slider-keys';
 

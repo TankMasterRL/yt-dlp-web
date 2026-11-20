@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import type { Rect } from '$lib/animate/clip';
+import type { Rect } from '#lib/animate/clip.ts';
 import CropBox from './CropBox.svelte';
 
 const bounds = { width: 640, height: 360 };

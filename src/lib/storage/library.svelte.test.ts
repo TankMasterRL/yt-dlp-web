@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
-import { bestMergePair } from '$lib/formats';
-import type { DownloadProgress } from '$lib/download/download';
+import type { FormatInfo, VideoInfo } from '#lib/engine/runtime.ts';
+import { bestMergePair } from '#lib/formats.ts';
+import type { DownloadProgress } from '#lib/download/download.ts';
 import type { LibraryDb, LibraryItem } from './db';
 import type { MediaFacts } from './imported';
 import { Library, type Downloader, type LibraryDeps, type Remuxer } from './library.svelte';

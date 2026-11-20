@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { bestMergePair, primaryVideo } from '$lib/formats';
+import { bestMergePair, primaryVideo } from '#lib/formats.ts';
 import { CLIP_360, CLIP_AUDIO, FIXTURES as SITE } from '../../../tests/fixtures/site';
 import { bootEngine, type Engine } from './runtime';
 import type { TransportRequest, TransportResponse } from './transport';

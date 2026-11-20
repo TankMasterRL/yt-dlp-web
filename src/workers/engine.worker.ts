@@ -5,10 +5,10 @@
  * and the pinned wheels are loaded from this app's own origin; the wheels are
  * SHA-256 checked before they are unpacked (bootEngine).
  */
-import type { EngineLoad, EngineProgress, EngineRequest } from '$lib/engine/client';
-import { bootEngine, type Engine, type ExtractResult } from '$lib/engine/runtime';
-import { createSyncSolver, createSyncTransport, probeRelay } from '$lib/relay/client';
-import { serveWorker } from '$lib/workers/protocol';
+import type { EngineLoad, EngineProgress, EngineRequest } from '#lib/engine/client.ts';
+import { bootEngine, type Engine, type ExtractResult } from '#lib/engine/runtime.ts';
+import { createSyncSolver, createSyncTransport, probeRelay } from '#lib/relay/client.ts';
+import { serveWorker } from '#lib/workers/protocol.ts';
 
 let engine: Engine | undefined;
 

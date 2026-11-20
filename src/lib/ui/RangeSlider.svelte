@@ -8,8 +8,8 @@
 		revealTime,
 		setRangeEdge,
 		type TimeRange
-	} from '$lib/animate/clip';
-	import type { PictureGrid } from '$lib/animate/grid';
+	} from '#lib/animate/clip.ts';
+	import type { PictureGrid } from '#lib/animate/grid.ts';
 	import { followPointer } from './drag';
 	import { observeSize } from './size';
 	import { edgeTarget, moveDelta } from './slider-keys';

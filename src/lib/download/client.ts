@@ -1,8 +1,8 @@
 /** Main-thread side of the download worker: the Library's `Downloader`. */
 import downloadWorkerUrl from '../../workers/download.worker.ts?worker&url';
-import type { Downloader, DownloadRequest, ImportRequest } from '$lib/storage/library.svelte';
-import { trustedWorkerUrl } from '$lib/trusted-types';
-import { WorkerClient } from '$lib/workers/protocol';
+import type { Downloader, DownloadRequest, ImportRequest } from '#lib/storage/library.svelte.ts';
+import { trustedWorkerUrl } from '#lib/trusted-types.ts';
+import { WorkerClient } from '#lib/workers/protocol.ts';
 import type { DownloadProgress } from './download';
 
 export interface DownloadLoad {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import type { FormatInfo } from '$lib/engine/runtime';
+import type { FormatInfo } from '#lib/engine/runtime.ts';
 import FormatTable from './FormatTable.svelte';
 
 const formats: FormatInfo[] = [

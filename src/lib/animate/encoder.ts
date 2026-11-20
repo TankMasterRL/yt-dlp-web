@@ -3,7 +3,7 @@
  * in the format asked for. Kept apart from the worker script so tests can
  * serve the real thing over a MessageChannel, or run an encoder in-thread.
  */
-import type { WorkerHandlers } from '$lib/workers/protocol';
+import type { WorkerHandlers } from '#lib/workers/protocol.ts';
 import { ApngEncoder } from './apng';
 import { AvifEncoder, av1Supported, webCodecsAv1 } from './avif';
 import { delayAt } from './clip';

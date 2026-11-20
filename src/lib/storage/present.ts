@@ -1,6 +1,6 @@
 /** Presentation helpers for library items. */
-import type { DownloadProgress } from '$lib/download/download';
-import { formatBytes } from '$lib/formats';
+import type { DownloadProgress } from '#lib/download/download.ts';
+import { formatBytes } from '#lib/formats.ts';
 import type { ItemStatus, LibraryItem } from './db';
 
 const MAX_TITLE = 160;

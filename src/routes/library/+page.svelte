@@ -1,16 +1,21 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
-	import { appEndpoints } from '$lib/endpoints';
-	import { formatBytes, formatDuration } from '$lib/formats';
-	import type { LibraryItem } from '$lib/storage/db';
-	import { importedTitle } from '$lib/storage/imported';
-	import { getLibrary, opfsAvailable } from '$lib/storage/instance';
-	import { exportFileName, libraryBytes, progressLabel, statusLabel } from '$lib/storage/present';
-	import AnimationDialog from '$lib/ui/AnimationDialog.svelte';
-	import PlayerDialog from '$lib/ui/PlayerDialog.svelte';
-	import { saveFile } from '$lib/ui/save';
-	import Spinner from '$lib/ui/Spinner.svelte';
+	import { appEndpoints } from '#lib/endpoints.ts';
+	import { formatBytes, formatDuration } from '#lib/formats.ts';
+	import type { LibraryItem } from '#lib/storage/db.ts';
+	import { importedTitle } from '#lib/storage/imported.ts';
+	import { getLibrary, opfsAvailable } from '#lib/storage/instance.ts';
+	import {
+		exportFileName,
+		libraryBytes,
+		progressLabel,
+		statusLabel
+	} from '#lib/storage/present.ts';
+	import AnimationDialog from '#lib/ui/AnimationDialog.svelte';
+	import PlayerDialog from '#lib/ui/PlayerDialog.svelte';
+	import { saveFile } from '#lib/ui/save.ts';
+	import Spinner from '#lib/ui/Spinner.svelte';
 
 	const endpoints = appEndpoints();
 	const library = getLibrary(endpoints);

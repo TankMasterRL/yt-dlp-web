@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { OpenedVideo, SeekableVideo } from '$lib/animate/frames';
+import type { OpenedVideo, SeekableVideo } from '#lib/animate/frames.ts';
 import { THUMBNAIL_WIDTH, inspectFile, inspectMedia, type StillCanvas } from './inspect';
 
 /** A loaded media element that seeks at once. */

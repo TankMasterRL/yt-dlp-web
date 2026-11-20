@@ -1,13 +1,14 @@
 /**
  * The app's Content Security Policy and security headers, in one place:
- * svelte.config.js turns the document policy into the prerendered <meta> tag;
- * the Vite preview server, `build/_headers` and `deploy/Caddyfile` (both from
- * scripts/write-headers.ts) send the header rules. Plain JS so all can import it.
+ * SvelteKit's `csp` option (vite.config.ts) turns the document policy into the
+ * prerendered <meta> tag; the Vite preview server, `build/_headers` and
+ * `deploy/Caddyfile` (both from scripts/write-headers.ts) send the header rules.
+ * Plain JS so all can import it.
  */
 import { createHash } from 'node:crypto';
 
 // SvelteKit's root component renders its accessibility route announcer with this
-// inline style attribute (kit/src/core/sync/write_root.js). Rather than allow
+// inline style attribute (kit/src/runtime/components/root.svelte). Rather than allow
 // 'unsafe-inline' styles, 'unsafe-hashes' admits exactly this attribute value and
 // nothing else. If a SvelteKit upgrade changes it, the e2e CSP guard fails.
 const KIT_ANNOUNCER_STYLE =
@@ -20,6 +21,7 @@ export const APP_TRUSTED_TYPES_POLICIES = ['yt-dlp-web-worker-url'];
 /**
  * BASE_PATH (subpath hosting, e.g. GitHub Pages) normalized to SvelteKit's
  * rules: leading slash, no trailing slash, '' for the site root.
+ * @returns {'' | `/${string}`}
  */
 export function basePathFromEnv(env = process.env) {
 	const raw = env.BASE_PATH ?? '';
@@ -44,7 +46,7 @@ export function relayOriginFromEnv(env = process.env) {
 }
 
 /**
- * Document policy in SvelteKit's `kit.csp.directives` shape (keywords unquoted;
+ * Document policy in the shape of SvelteKit's `csp.directives` (keywords unquoted;
  * SvelteKit adds the hashes of its own inline scripts).
  * @param {{ relayOrigin: string | null, dev: boolean }} options
  */

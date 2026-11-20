@@ -5,8 +5,8 @@
  * (the time range, once the video's frame rate is known), the arrows step one
  * picture instead.
  */
-import type { TimeRange } from '$lib/animate/clip';
-import { stepFrame, type PictureGrid } from '$lib/animate/grid';
+import type { TimeRange } from '#lib/animate/clip.ts';
+import { stepFrame, type PictureGrid } from '#lib/animate/grid.ts';
 
 export const STEP = 0.1;
 export const BIG_STEP = 1;

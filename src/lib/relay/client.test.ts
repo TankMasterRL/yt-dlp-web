@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { TransportRequest } from '$lib/engine/transport';
+import type { TransportRequest } from '#lib/engine/transport.ts';
 import {
 	RelayError,
 	createSyncSolver,

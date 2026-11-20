@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { Size, TimeRange } from '$lib/animate/clip';
-	import { drawTiles, tileCount, tileSize, tileTimes } from '$lib/animate/filmstrip';
-	import { openVideo, type OpenedVideo, type VideoMetadata } from '$lib/animate/frames';
+	import type { Size, TimeRange } from '#lib/animate/clip.ts';
+	import { drawTiles, tileCount, tileSize, tileTimes } from '#lib/animate/filmstrip.ts';
+	import { openVideo, type OpenedVideo, type VideoMetadata } from '#lib/animate/frames.ts';
 	import { observeSize } from './size';
 
 	interface Props {

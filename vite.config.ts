@@ -1,14 +1,19 @@
-import { fileURLToPath } from 'node:url';
-import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import { sveltekit, type Config as KitConfig } from '@sveltejs/kit/vite';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 import {
 	basePathFromEnv,
+	documentDirectives,
 	headersFor,
 	relayOriginFromEnv,
 	securityHeaderRules
 } from './csp.config.js';
+
+/** SvelteKit's CSP directives, a type it does not export by name. */
+type CspDirectives = NonNullable<NonNullable<KitConfig['csp']>['directives']>;
 
 /**
  * `vite preview` sends the security headers a real deploy sends (`build/_headers`,
@@ -35,7 +40,31 @@ function securityHeaders(): Plugin {
 }
 
 export default defineConfig({
-	plugins: [sveltekit(), svelteTesting(), securityHeaders()],
+	plugins: [
+		sveltekit({
+			preprocess: vitePreprocess(),
+			// Fully client-side: yt-dlp runs in Pyodide in a Web Worker, so there is no
+			// server component. Every route is prerendered; the fallback covers deep
+			// links on hosts (GitHub Pages) that serve 404.html for unknown paths.
+			adapter: adapter({ fallback: '404.html' }),
+			// Serve from a subpath (e.g. GitHub Pages) with BASE_PATH=/repo-name at build time.
+			paths: { base: basePathFromEnv() },
+			// Nothing reads `updated`, so no hourly fetch of _app/version.json (SvelteKit 2
+			// never polled). SvelteKit 3 still checks it when the tab regains focus.
+			version: { pollInterval: 0 },
+			csp: {
+				mode: 'hash',
+				// The relay origin (VITE_RELAY_URL) is baked in at build time: it is the
+				// only extra origin the page may connect to.
+				directives: documentDirectives({
+					relayOrigin: relayOriginFromEnv(),
+					dev: process.argv.includes('dev')
+				}) as CspDirectives
+			}
+		}),
+		svelteTesting(),
+		securityHeaders()
+	],
 	define: {
 		// Which FFmpeg core scripts/sync-assets.ts ships, so the page can name its license.
 		'import.meta.env.YT_DLP_WEB_FFMPEG': JSON.stringify(process.env.YT_DLP_WEB_FFMPEG ?? '')
@@ -67,7 +96,7 @@ export default defineConfig({
 				// Runtimes that must resolve like Node, not like a browser (svelteTesting
 				// adds the "browser" condition, which swaps in stubs for packages such as
 				// ws): real Pyodide, the Worker in workerd, config and build scripts.
-				resolve: { alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) } },
+				// #lib needs no alias here: package.json's imports maps it, as Node does.
 				test: {
 					name: 'node',
 					environment: 'node',

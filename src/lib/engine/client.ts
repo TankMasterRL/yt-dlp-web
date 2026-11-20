@@ -4,9 +4,9 @@
  * the page's thread.
  */
 import engineWorkerUrl from '../../workers/engine.worker.ts?worker&url';
-import type { RelayProbe } from '$lib/relay/client';
-import { trustedWorkerUrl } from '$lib/trusted-types';
-import { WorkerClient } from '$lib/workers/protocol';
+import type { RelayProbe } from '#lib/relay/client.ts';
+import { trustedWorkerUrl } from '#lib/trusted-types.ts';
+import { WorkerClient } from '#lib/workers/protocol.ts';
 import type { BootStage, ExtractResult, LogLevel } from './runtime';
 
 export interface EngineLoad {

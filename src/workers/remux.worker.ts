@@ -9,12 +9,12 @@
  * those three files are all it can touch. Like the download worker, it holds
  * the item's Web Lock throughout.
  */
-import { downloadLockName } from '$lib/download/locks';
-import { FFMPEG_CORE_JS, FFMPEG_CORE_WASM, FFMPEG_DIR } from '$lib/remux/assets';
-import type { RemuxLoad, RemuxWork } from '$lib/remux/client';
-import type { ByteHandle } from '$lib/remux/handle-fs';
-import { mergeStreams, type FFmpegCore } from '$lib/remux/merge';
-import { serveWorker } from '$lib/workers/protocol';
+import { downloadLockName } from '#lib/download/locks.ts';
+import { FFMPEG_CORE_JS, FFMPEG_CORE_WASM, FFMPEG_DIR } from '#lib/remux/assets.ts';
+import type { RemuxLoad, RemuxWork } from '#lib/remux/client.ts';
+import type { ByteHandle } from '#lib/remux/handle-fs.ts';
+import { mergeStreams, type FFmpegCore } from '#lib/remux/merge.ts';
+import { serveWorker } from '#lib/workers/protocol.ts';
 
 /** The OPFS sync access handle, which TypeScript's DOM lib does not describe. */
 interface SyncAccessHandle extends ByteHandle {

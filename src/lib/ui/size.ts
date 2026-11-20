@@ -1,5 +1,5 @@
 import type { Attachment } from 'svelte/attachments';
-import type { Size } from '$lib/animate/clip';
+import type { Size } from '#lib/animate/clip.ts';
 
 /**
  * An attachment that reports its element's size (the content box, in CSS

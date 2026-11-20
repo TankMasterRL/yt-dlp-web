@@ -1,8 +1,8 @@
 import { flushSync } from 'svelte';
 import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TimeRange } from '$lib/animate/clip';
-import type { OpenedVideo } from '$lib/animate/frames';
+import type { TimeRange } from '#lib/animate/clip.ts';
+import type { OpenedVideo } from '#lib/animate/frames.ts';
 import { FakeResizeObserver, resizeAll } from '../../../tests/helpers/resize-observer';
 import { FakeVideo } from '../../../tests/helpers/video';
 import Filmstrip from './Filmstrip.svelte';

@@ -4,7 +4,7 @@
  * this device; this store holds what the library shows and what a paused
  * download needs to resume.
  */
-import type { DownloadPlan, FormatKind } from '$lib/formats';
+import type { DownloadPlan, FormatKind } from '#lib/formats.ts';
 
 export type ItemStatus = 'downloading' | 'merging' | 'importing' | 'paused' | 'complete' | 'failed';
 

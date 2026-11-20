@@ -1,7 +1,7 @@
 /**
  * Trusted Types: production CSP sets `require-trusted-types-for 'script'`, so
  * `new Worker(url)` only accepts a TrustedScriptURL. This is the one policy our
- * code creates (named in svelte.config.js), and it admits same-origin scripts
+ * code creates (named in csp.config.js), and it admits same-origin scripts
  * only — injected markup can never talk it into starting a foreign worker.
  *
  * TypeScript's DOM lib has no Trusted Types typings, hence the local shapes.
