@@ -143,11 +143,11 @@ export const DOCUMENT_HEADER_DIRECTIVES = {
 /**
  * Powerful features the app never uses, switched off (it embeds nothing, so no
  * delegation either). Only features browsers recognise: an unknown one is a
- * console error, which e2e fails on.
+ * console error, which e2e fails on. Not browsing-topics: Chrome 159 no longer
+ * knows it, and the Topics API is only reachable by script the page runs.
  */
 const UNUSED_FEATURES = [
 	'accelerometer',
-	'browsing-topics',
 	'camera',
 	'display-capture',
 	'geolocation',
