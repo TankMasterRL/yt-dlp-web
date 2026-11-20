@@ -189,10 +189,11 @@
 	/*
 	 * Each end's handle stands inside the stretch, its outer edge where the stretch starts
 	 * or ends: at the bar's ends it is flush with them, in line with the time range's
-	 * thumbs above. Where a short stretch brings them together, each still stays on the bar.
+	 * thumbs above, and as wide. Where a short stretch brings them together, each still
+	 * stays on the bar.
 	 */
 	.handle {
-		--width: 0.75rem;
+		--width: var(--timeline-thumb);
 		position: absolute;
 		top: -0.2rem;
 		bottom: -0.2rem;

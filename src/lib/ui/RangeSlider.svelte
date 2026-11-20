@@ -349,7 +349,7 @@
 	 * range brings them together, each still stays on the track.
 	 */
 	.thumb {
-		--width: 0.9rem;
+		--width: var(--timeline-thumb);
 		position: absolute;
 		top: -0.3rem;
 		bottom: -0.3rem;

@@ -754,11 +754,14 @@ test.describe('the time range', () => {
 		await expect(start).toHaveAttribute('aria-valuenow', '0');
 		await expect(end).toHaveAttribute('aria-valuenow', '2');
 		await expectOnTrack();
-		// The zoom under it shows the whole clip: its ends' thumbs in line with the range's.
+		// The zoom under it shows the whole clip: its ends' thumbs in line with the range's, edge
+		// for edge — as wide as them.
 		await expect(zoomFrom).toHaveAttribute('aria-valuenow', '0');
 		await expect(zoomTo).toHaveAttribute('aria-valuenow', '2');
 		expect(Math.abs((await startsAt(zoomFrom)) - left)).toBeLessThanOrEqual(0.5);
 		expect(Math.abs((await endsAt(zoomTo)) - right)).toBeLessThanOrEqual(0.5);
+		expect(Math.abs((await endsAt(zoomFrom)) - (await endsAt(start)))).toBeLessThanOrEqual(0.5);
+		expect(Math.abs((await startsAt(zoomTo)) - (await startsAt(end)))).toBeLessThanOrEqual(0.5);
 		// Nothing is drawn past either end of the track or the zoom — not their ends, not the
 		// preview's mark at 0:00: just beside them, from above the range's thumbs to below the
 		// zoom's, the dialog's own background alone.
