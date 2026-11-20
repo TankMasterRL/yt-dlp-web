@@ -97,11 +97,14 @@ export default defineConfig({
 				// adds the "browser" condition, which swaps in stubs for packages such as
 				// ws): real Pyodide, the Worker in workerd, config and build scripts.
 				// #lib needs no alias here: package.json's imports maps it, as Node does.
+				// Vitest 5 projects inherit the root config, svelteTesting() included,
+				// unless they say otherwise.
+				extends: false,
 				test: {
 					name: 'node',
 					environment: 'node',
-					// Not inherited (this project does not `extends: true`): the real
-					// Pyodide, FFmpeg and workerd boots need far more than the 10 s default.
+					// Not inherited (`extends: false`): the real Pyodide, FFmpeg and
+					// workerd boots need far more than the 10 s default.
 					testTimeout: 60_000,
 					hookTimeout: 120_000,
 					include: [
