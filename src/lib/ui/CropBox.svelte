@@ -97,9 +97,9 @@
 			></button>
 		{/each}
 	</div>
-	<span id="{uid}-hint" class="visually-hidden"
-		>Drag it, or use the arrow keys; Shift for bigger steps.</span
-	>
+	<span id="{uid}-hint" class="visually-hidden">
+		Drag it, or use the arrow keys; Shift for bigger steps.
+	</span>
 </div>
 
 <style>

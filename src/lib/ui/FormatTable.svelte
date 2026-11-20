@@ -60,8 +60,9 @@
 					<td>{resolutionLabel(format)}</td>
 					<td>{format.ext ?? '—'}</td>
 					<td class="codecs">{codecs(format)}</td>
-					<td class="size">{size ? `${size.approx ? '≈ ' : ''}${formatBytes(size.bytes)}` : '—'}</td
-					>
+					<td class="size">
+						{size ? `${size.approx ? '≈ ' : ''}${formatBytes(size.bytes)}` : '—'}
+					</td>
 					{#if onDownload}
 						<td class="action">
 							{#if isDownloadable(format)}
@@ -69,13 +70,17 @@
 									type="button"
 									{disabled}
 									aria-label="Download format {format.format_id}"
-									onclick={() => onDownload(format)}>Download</button
+									onclick={() => onDownload(format)}
 								>
+									Download
+								</button>
 							{:else}
 								<span
 									class="unsupported"
-									title="Streaming ({format.protocol}) formats are not supported yet">stream</span
+									title="Streaming ({format.protocol}) formats are not supported yet"
 								>
+									stream
+								</span>
 							{/if}
 						</td>
 					{/if}

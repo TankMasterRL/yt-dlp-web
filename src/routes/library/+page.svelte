@@ -166,11 +166,11 @@
 			<meter min="0" max={used + room || 1} value={used} aria-label="Storage the library uses"
 			></meter>
 		{/if}
-		<span
-			>{formatBytes(used)} in your library{room === null
+		<span>
+			{formatBytes(used)} in your library{room === null
 				? ''
-				: ` · room for ${formatBytes(room)} more`}</span
-		>
+				: ` · room for ${formatBytes(room)} more`}
+		</span>
 	{/if}
 	{#if persisted}
 		<span class="persisted">Storage is persistent: the browser won't evict your downloads.</span>
@@ -186,8 +186,10 @@
 			type="button"
 			class="primary"
 			onclick={() => importInput.click()}
-			disabled={canStore === false || opening !== null}>Import videos…</button
+			disabled={canStore === false || opening !== null}
 		>
+			Import videos…
+		</button>
 		<button type="button" onclick={() => animateInput.click()}>Animate a video file…</button>
 	</div>
 	<p class="hint">
@@ -251,9 +253,9 @@
 			<li>
 				<article aria-labelledby="title-{item.id}" data-status={item.status}>
 					<div class="thumb" aria-hidden="true">
-						{#if thumb}<img src={thumb} alt="" decoding="async" />{:else}<span
-								>{item.kind === 'audio' ? '♪' : '▶'}</span
-							>{/if}
+						{#if thumb}<img src={thumb} alt="" decoding="async" />{:else}<span>
+								{item.kind === 'audio' ? '♪' : '▶'}
+							</span>{/if}
 					</div>
 					<div class="body">
 						<h2 id="title-{item.id}">{item.title}</h2>
@@ -282,9 +284,9 @@
 							{:else if item.status === 'failed'}
 								<span class="error">{item.error}</span>
 							{:else}
-								<span
-									>{progressLabel({ bytesDone: item.bytesDone, bytesTotal: item.bytesTotal })}</span
-								>
+								<span>
+									{progressLabel({ bytesDone: item.bytesDone, bytesTotal: item.bytesTotal })}
+								</span>
 							{/if}
 						</p>
 					</div>
@@ -294,33 +296,43 @@
 								type="button"
 								class="primary"
 								onclick={() => play(item)}
-								aria-label="Play {item.title}">Play</button
+								aria-label="Play {item.title}"
 							>
+								Play
+							</button>
 							{#if item.kind !== 'audio'}
 								<button
 									type="button"
 									onclick={() => animate(item)}
-									aria-label="Make an animated image from {item.title}">Animate</button
+									aria-label="Make an animated image from {item.title}"
 								>
+									Animate
+								</button>
 							{/if}
 							<button
 								type="button"
 								onclick={() => save(item)}
-								aria-label="Save {item.title} to disk">Save</button
+								aria-label="Save {item.title} to disk"
 							>
+								Save
+							</button>
 						{:else if item.status === 'downloading'}
 							<button
 								type="button"
 								onclick={() => library.pause(item.id)}
-								aria-label="Pause {item.title}">Pause</button
+								aria-label="Pause {item.title}"
 							>
+								Pause
+							</button>
 						{:else if (item.status === 'paused' || item.status === 'failed') && item.origin !== 'import'}
 							<!-- An import cannot be resumed: the picked file was only lent. -->
 							<button
 								type="button"
 								onclick={() => library.resume(item.id)}
-								aria-label="Resume {item.title}">Resume</button
+								aria-label="Resume {item.title}"
 							>
+								Resume
+							</button>
 						{/if}
 						{#if item.status === 'merging'}
 							<!-- ffmpeg holds the files until it finishes, in seconds. -->
@@ -329,15 +341,19 @@
 								type="button"
 								class="danger"
 								onclick={() => remove(item)}
-								aria-label="Confirm deleting {item.title}">Confirm delete</button
+								aria-label="Confirm deleting {item.title}"
 							>
+								Confirm delete
+							</button>
 							<button type="button" onclick={() => (confirmDelete = null)}>Keep</button>
 						{:else}
 							<button
 								type="button"
 								onclick={() => (confirmDelete = item.id)}
-								aria-label="Delete {item.title}">Delete</button
+								aria-label="Delete {item.title}"
 							>
+								Delete
+							</button>
 						{/if}
 					</div>
 				</article>
