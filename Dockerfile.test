@@ -10,7 +10,7 @@
 # The remux core (`bun run build:ffmpeg`): FFmpeg compiled to WebAssembly in
 # the image of the Emscripten release scripts/build-ffmpeg.ts pins, so the
 # script finds that emcc on PATH. Its own stage: only its sources invalidate it.
-FROM emscripten/emsdk:6.0.10 AS remux-core
+FROM emscripten/emsdk:7.0.0 AS remux-core
 COPY --from=oven/bun:1.4.5 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 COPY ffmpeg ffmpeg/
