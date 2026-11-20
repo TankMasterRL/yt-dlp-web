@@ -3,7 +3,7 @@
  * yt-dlp log, and the latest extraction result. The engine is injected
  * (`spawnEngine` in the app, a fake in tests).
  */
-import type { RelayProbe } from '$lib/relay/client';
+import type { RelayProbe } from '#lib/relay/client.ts';
 import type { EngineClient, EngineLoad, EngineProgress } from './client';
 import type { BootStage, ExtractResult, LogLevel } from './runtime';
 

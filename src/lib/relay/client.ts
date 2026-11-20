@@ -6,7 +6,7 @@
  *   Worker, never on the main thread).
  * - `relayFetch` — streaming fetch for bulk media in the download worker.
  */
-import type { SyncTransport } from '$lib/engine/transport';
+import type { SyncTransport } from '#lib/engine/transport.ts';
 import {
 	NO_RELAY,
 	RELAY_PATH,

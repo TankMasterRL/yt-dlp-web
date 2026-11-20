@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { MergeRequest } from '$lib/storage/library.svelte';
-import { serveWorker, type WorkerHandlers } from '$lib/workers/protocol';
+import type { MergeRequest } from '#lib/storage/library.svelte.ts';
+import { serveWorker, type WorkerHandlers } from '#lib/workers/protocol.ts';
 import { workerRemuxer, type RemuxLoad, type RemuxWork } from './client';
 
 type Handlers = WorkerHandlers<RemuxLoad, RemuxWork, { bytesTotal: number }, never>;

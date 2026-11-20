@@ -4,8 +4,8 @@
  * metadata to IndexedDB. Every I/O dependency is injected (`getLibrary()`
  * wires the browser ones).
  */
-import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
-import type { DownloadProgress } from '$lib/download/download';
+import type { FormatInfo, VideoInfo } from '#lib/engine/runtime.ts';
+import type { DownloadProgress } from '#lib/download/download.ts';
 import {
 	downloadPlan,
 	formatKind,
@@ -14,7 +14,7 @@ import {
 	type DownloadPlan,
 	type MergeContainer,
 	type MergePair
-} from '$lib/formats';
+} from '#lib/formats.ts';
 import type { DownloadedItem, LibraryDb, LibraryItem, MergePart } from './db';
 import { importedItem, type MediaFacts } from './imported';
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { dragCrop, type CropHandle, type Rect, type Size } from '$lib/animate/clip';
+	import { dragCrop, type CropHandle, type Rect, type Size } from '#lib/animate/clip.ts';
 	import { followPointer } from './drag';
 
 	interface Props {

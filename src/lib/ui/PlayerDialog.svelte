@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FormatKind } from '$lib/formats';
+	import type { FormatKind } from '#lib/formats.ts';
 
 	interface Props {
 		file: File;

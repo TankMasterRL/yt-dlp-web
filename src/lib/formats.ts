@@ -1,6 +1,6 @@
 /** Presentation and download-planning helpers for yt-dlp's format dicts. */
-import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
-import type { HeaderList } from '$lib/relay/protocol';
+import type { FormatInfo, VideoInfo } from '#lib/engine/runtime.ts';
+import type { HeaderList } from '#lib/relay/protocol.ts';
 
 /** av = one file with picture and sound; video/audio = one half of a split stream. */
 export type FormatKind = 'av' | 'video' | 'audio';

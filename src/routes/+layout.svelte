@@ -7,7 +7,7 @@
 
 	const links = [
 		{ href: resolve('/'), label: 'Download' },
-		{ href: resolve('/library/'), label: 'Library' }
+		{ href: resolve('library/'), label: 'Library' }
 	];
 </script>
 

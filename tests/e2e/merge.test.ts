@@ -52,6 +52,13 @@ test.describe('merging separate video and audio with FFmpeg', () => {
 		await expect(best).toContainText(/never re-encoded \(\d+(\.\d+)? KiB\)\./);
 		// Until a merge starts, only a HEAD probe has asked about the FFmpeg core.
 		expect(ffmpegRequests).toEqual(['HEAD /ffmpeg/ffmpeg-core.wasm']);
+		// The core's license notice is linked, and served, beside it.
+		const notice = await best
+			.getByRole('link', { name: /^(ffmpeg\.wasm|FFmpeg)$/ })
+			.getAttribute('href');
+		const noticeUrl = new URL(notice!, page.url());
+		expect(noticeUrl.pathname).toBe('/ffmpeg/NOTICE.txt');
+		expect((await request.get(noticeUrl.href)).ok()).toBe(true);
 
 		const remuxWorker = page.waitForEvent('worker', (worker) =>
 			worker.url().includes('remux.worker')

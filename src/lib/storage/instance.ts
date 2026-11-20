@@ -5,11 +5,11 @@
  * Browser-only — pages call it from their scripts, never from modules that
  * tests import.
  */
-import { activeDownloads } from '$lib/download/locks';
-import { workerDownloader } from '$lib/download/client';
-import type { AppEndpoints } from '$lib/endpoints';
-import { relayFetch } from '$lib/relay/client';
-import { workerRemuxer } from '$lib/remux/client';
+import { activeDownloads } from '#lib/download/locks.ts';
+import { workerDownloader } from '#lib/download/client.ts';
+import type { AppEndpoints } from '#lib/endpoints.ts';
+import { relayFetch } from '#lib/relay/client.ts';
+import { workerRemuxer } from '#lib/remux/client.ts';
 import { openLibraryDb, type LibraryDb } from './db';
 import { inspectFile } from './inspect';
 import { Library, type FileStore } from './library.svelte';

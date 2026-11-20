@@ -7,12 +7,12 @@
  * second writer for the same file. Bytes are written with an OPFS sync access
  * handle, which only exists in dedicated workers.
  */
-import { copyToSink } from '$lib/download/copy';
-import { downloadToSink, type ByteSink, type DownloadProgress } from '$lib/download/download';
-import type { DownloadLoad, DownloadWork, DownloadWorkerProgress } from '$lib/download/client';
-import { downloadLockName } from '$lib/download/locks';
-import { relayFetch } from '$lib/relay/client';
-import { serveWorker } from '$lib/workers/protocol';
+import { copyToSink } from '#lib/download/copy.ts';
+import { downloadToSink, type ByteSink, type DownloadProgress } from '#lib/download/download.ts';
+import type { DownloadLoad, DownloadWork, DownloadWorkerProgress } from '#lib/download/client.ts';
+import { downloadLockName } from '#lib/download/locks.ts';
+import { relayFetch } from '#lib/relay/client.ts';
+import { serveWorker } from '#lib/workers/protocol.ts';
 
 /** The OPFS sync access handle, which TypeScript's DOM lib does not describe. */
 interface SyncAccessHandle {

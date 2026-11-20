@@ -10,7 +10,7 @@ import {
 	seek,
 	type OpenedVideo,
 	type SeekableVideo
-} from '$lib/animate/frames';
+} from '#lib/animate/frames.ts';
 import type { MediaFacts } from './imported';
 
 /** Thumbnails are shown at most 8rem wide; twice that covers high-density screens. */

@@ -1,8 +1,8 @@
 import { flushSync, createRawSnippet, type Snippet } from 'svelte';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MIN_SPAN, type TimeRange } from '$lib/animate/clip';
-import type { PictureGrid } from '$lib/animate/grid';
+import { MIN_SPAN, type TimeRange } from '#lib/animate/clip.ts';
+import type { PictureGrid } from '#lib/animate/grid.ts';
 import { FakeResizeObserver, resizeAll } from '../../../tests/helpers/resize-observer';
 import RangeSlider from './RangeSlider.svelte';
 

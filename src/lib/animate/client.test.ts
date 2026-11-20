@@ -2,7 +2,7 @@
 // Node's own Blob and MessageChannel: a Blob crosses the channel as it does between threads.
 import { describe, expect, it } from 'vitest';
 import { decodeGif } from '../../../tests/helpers/gif';
-import { serveWorker } from '$lib/workers/protocol';
+import { serveWorker } from '#lib/workers/protocol.ts';
 import {
 	workerEncoder,
 	workerFormats,

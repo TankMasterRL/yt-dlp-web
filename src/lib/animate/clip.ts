@@ -5,7 +5,7 @@
  * Pure, so the editor, the crop handles and the time slider share one set of
  * rules.
  */
-import { exportFileName } from '$lib/storage/present';
+import { exportFileName } from '#lib/storage/present.ts';
 import { FORMATS, type AnimationFormat } from './formats';
 
 /** A region of the video frame, in whole source pixels. */

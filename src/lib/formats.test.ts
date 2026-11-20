@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FormatInfo, VideoInfo } from '$lib/engine/runtime';
+import type { FormatInfo, VideoInfo } from '#lib/engine/runtime.ts';
 import {
 	bestMergePair,
 	codecName,

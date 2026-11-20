@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FormatInfo } from '$lib/engine/runtime';
+	import type { FormatInfo } from '#lib/engine/runtime.ts';
 	import {
 		formatBytes,
 		formatKind,
@@ -8,7 +8,7 @@
 		resolutionLabel,
 		sizeOf,
 		type FormatKind
-	} from '$lib/formats';
+	} from '#lib/formats.ts';
 
 	interface Props {
 		formats: FormatInfo[];

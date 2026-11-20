@@ -1,8 +1,8 @@
 /** Main-thread side of the remux worker: the Library's `Remuxer`. */
 import remuxWorkerUrl from '../../workers/remux.worker.ts?worker&url';
-import type { MergeRequest, Remuxer } from '$lib/storage/library.svelte';
-import { trustedWorkerUrl } from '$lib/trusted-types';
-import { WorkerClient, type Endpoint } from '$lib/workers/protocol';
+import type { MergeRequest, Remuxer } from '#lib/storage/library.svelte.ts';
+import { trustedWorkerUrl } from '#lib/trusted-types.ts';
+import { WorkerClient, type Endpoint } from '#lib/workers/protocol.ts';
 import { FFMPEG_CORE_WASM, FFMPEG_DIR } from './assets';
 
 export interface RemuxLoad {

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { asset, resolve } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
-	import { getSession } from '$lib/engine/instance';
-	import { engineStatus } from '$lib/engine/present';
-	import type { FormatInfo } from '$lib/engine/runtime';
-	import { WHEELS } from '$lib/engine/wheels';
-	import { appEndpoints } from '$lib/endpoints';
+	import { getSession } from '#lib/engine/instance.ts';
+	import { engineStatus } from '#lib/engine/present.ts';
+	import type { FormatInfo } from '#lib/engine/runtime.ts';
+	import { WHEELS } from '#lib/engine/wheels.ts';
+	import { appEndpoints } from '#lib/endpoints.ts';
 	import {
 		bestMergePair,
 		codecName,
@@ -14,11 +14,11 @@
 		primaryVideo,
 		resolutionLabel,
 		sizeOf
-	} from '$lib/formats';
-	import { getLibrary, opfsAvailable } from '$lib/storage/instance';
-	import { progressLabel, statusLabel } from '$lib/storage/present';
-	import FormatTable from '$lib/ui/FormatTable.svelte';
-	import Spinner from '$lib/ui/Spinner.svelte';
+	} from '#lib/formats.ts';
+	import { getLibrary, opfsAvailable } from '#lib/storage/instance.ts';
+	import { progressLabel, statusLabel } from '#lib/storage/present.ts';
+	import FormatTable from '#lib/ui/FormatTable.svelte';
+	import Spinner from '#lib/ui/Spinner.svelte';
 
 	// Resolved here, in browser-only code: workers get absolute URLs in `load`.
 	const endpoints = appEndpoints();
@@ -42,6 +42,9 @@
 		import.meta.env.YT_DLP_WEB_FFMPEG === 'remux'
 			? { name: 'FFmpeg', license: 'LGPL-2.1-or-later' }
 			: { name: 'ffmpeg.wasm', license: 'GPL-2.0-or-later' };
+	// Not asset(): its paths are typed by what static/ holds when svelte-kit sync runs,
+	// and ffmpeg/ is a build artifact (scripts/sync-assets.ts), absent from a checkout.
+	const ffmpegNotice = new URL('ffmpeg/NOTICE.txt', endpoints.assetsBase).href;
 	/** Whether this browser lets the app keep files (OPFS); null until asked. */
 	let canStore = $state<boolean | null>(null);
 	/** Library item ids started from this page, newest first. */
@@ -110,7 +113,7 @@
 			page may not read them itself.
 		</p>
 		<p>
-			Everything else works, right here in your browser: <a href={resolve('/library/')}
+			Everything else works, right here in your browser: <a href={resolve('library/')}
 				>import videos you already have</a
 			> into the library, play them, and make animated images from them. Nothing is uploaded anywhere.
 		</p>
@@ -166,7 +169,7 @@
 		<p class="status note" data-relay="unreachable">
 			The relay at {relayHost} isn't answering this page, so nothing can be fetched right now: its Worker
 			may be switched off, or not admit this site (ALLOWED_ORIGINS). Videos you already have can still
-			be <a href={resolve('/library/')}>imported into the library</a> and animated.
+			be <a href={resolve('library/')}>imported into the library</a> and animated.
 		</p>
 	{:else if session.relay === 'relays'}
 		<p class="status note" data-solver="unavailable">
@@ -217,7 +220,7 @@
 							>Download best quality</button
 						>
 						<p class="license">
-							Merging uses <a href={asset('/ffmpeg/NOTICE.txt')}>{ffmpeg.name}</a>
+							Merging uses <a href={ffmpegNotice}>{ffmpeg.name}</a>
 							({ffmpeg.license}), loaded only when you merge.
 						</p>
 					{:else if canMerge === false}
@@ -257,7 +260,7 @@
 					</li>
 				{/each}
 			</ul>
-			<p><a href={resolve('/library/')}>Open the library</a> to play, save or manage downloads.</p>
+			<p><a href={resolve('library/')}>Open the library</a> to play, save or manage downloads.</p>
 		</section>
 	{/if}
 {/if}

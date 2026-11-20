@@ -1,7 +1,7 @@
 import { flushSync } from 'svelte';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { MIN_VIEW, type TimeRange } from '$lib/animate/clip';
+import { MIN_VIEW, type TimeRange } from '#lib/animate/clip.ts';
 import ZoomBar from './ZoomBar.svelte';
 
 function setup(

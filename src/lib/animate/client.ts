@@ -1,7 +1,7 @@
 /** Main-thread side of the animate worker: the editor's `AnimationEncoder`. */
 import animateWorkerUrl from '../../workers/animate.worker.ts?worker&url';
-import { trustedWorkerUrl } from '$lib/trusted-types';
-import { WorkerClient, type Endpoint } from '$lib/workers/protocol';
+import { trustedWorkerUrl } from '#lib/trusted-types.ts';
+import { WorkerClient, type Endpoint } from '#lib/workers/protocol.ts';
 import type { AnimationEncoder } from './editor.svelte';
 import type { AnimationFormat } from './formats';
 

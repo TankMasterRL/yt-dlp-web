@@ -1,5 +1,5 @@
 <script module lang="ts">
-	import { workerFormats, type FormatSupport } from '$lib/animate/client';
+	import { workerFormats, type FormatSupport } from '#lib/animate/client.ts';
 
 	/** Which formats this browser can make holds while the page is open: asked once, not per video. */
 	let formats: Promise<FormatSupport> | undefined;
@@ -25,19 +25,19 @@
 		formatFps,
 		fullFrame,
 		type TimeRange
-	} from '$lib/animate/clip';
-	import { workerEncoder } from '$lib/animate/client';
-	import { AnimationEditor } from '$lib/animate/editor.svelte';
-	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '$lib/animate/formats';
+	} from '#lib/animate/clip.ts';
+	import { workerEncoder } from '#lib/animate/client.ts';
+	import { AnimationEditor } from '#lib/animate/editor.svelte.ts';
+	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '#lib/animate/formats.ts';
 	import {
 		learnGrid,
 		mediaMetadata,
 		openVideo,
 		videoFrames,
 		videoMetadata
-	} from '$lib/animate/frames';
-	import { frameRate, pictureMiddle, stepGrid, type FrameGrid } from '$lib/animate/grid';
-	import { formatBytes } from '$lib/formats';
+	} from '#lib/animate/frames.ts';
+	import { frameRate, pictureMiddle, stepGrid, type FrameGrid } from '#lib/animate/grid.ts';
+	import { formatBytes } from '#lib/formats.ts';
 	import CropBox from './CropBox.svelte';
 	import Filmstrip from './Filmstrip.svelte';
 	import RangeSlider from './RangeSlider.svelte';

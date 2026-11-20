@@ -6,9 +6,9 @@
  * relay-tunnelled redirects, 416 at the end, a short body. The download worker
  * wires it to relayFetch and an OPFS sync access handle.
  */
-import type { DownloadPlan } from '$lib/formats';
-import type { RelayFetchRequest, RelayFetchResponse } from '$lib/relay/client';
-import type { HeaderList } from '$lib/relay/protocol';
+import type { DownloadPlan } from '#lib/formats.ts';
+import type { RelayFetchRequest, RelayFetchResponse } from '#lib/relay/client.ts';
+import type { HeaderList } from '#lib/relay/protocol.ts';
 
 /** Random-access bytes on disk (an OPFS FileSystemSyncAccessHandle in the worker). */
 export interface ByteSink {

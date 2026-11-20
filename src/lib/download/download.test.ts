@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { DownloadPlan } from '$lib/formats';
-import type { RelayFetchRequest, RelayFetchResponse } from '$lib/relay/client';
+import type { DownloadPlan } from '#lib/formats.ts';
+import type { RelayFetchRequest, RelayFetchResponse } from '#lib/relay/client.ts';
 import { DownloadFailure, downloadToSink, type ByteSink } from './download';
 
 const BYTES = Uint8Array.from({ length: 1000 }, (_, i) => i % 251);

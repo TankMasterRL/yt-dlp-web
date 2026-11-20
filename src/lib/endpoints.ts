@@ -2,8 +2,8 @@
  * Absolute URLs the app talks to, resolved in the browser. Imports $app/paths,
  * so only pages may use it — never a module a node-environment test reaches.
  */
-import { base } from '$app/paths';
-import { relayEndpoints } from '$lib/relay/client';
+import { resolve } from '$app/paths';
+import { relayEndpoints } from '#lib/relay/client.ts';
 
 export interface AppEndpoints {
 	/** pyodide/, wheels/ and ffmpeg/ live under it. */
@@ -15,7 +15,7 @@ export interface AppEndpoints {
 export function appEndpoints(): AppEndpoints {
 	const relay = relayEndpoints(import.meta.env.VITE_RELAY_URL);
 	return {
-		assetsBase: new URL(`${base}/`, location.href).href,
+		assetsBase: new URL(resolve('/'), location.href).href,
 		relay: relay && {
 			relay: new URL(relay.relay, location.href).href,
 			solve: new URL(relay.solve, location.href).href
