@@ -73,6 +73,32 @@ describe('ZoomBar', () => {
 		expect(props.view).toEqual({ start: 0, end: MIN_VIEW });
 	});
 
+	it('drags an end by as far as the pointer moves, wherever on it the press was', async () => {
+		const { props, from, to } = setup();
+		// Inside the stretch, 5 px before where it ends: the end follows the pointer, it never jumps to it.
+		await fireEvent.pointerDown(to, { clientX: 295, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 195, pointerId: 1 });
+		expect(props.view).toEqual({ start: 0, end: 5 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		await fireEvent.pointerDown(from, { clientX: 105, button: 0, pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 125, pointerId: 1 });
+		expect(props.view).toEqual({ start: 1, end: 5 });
+		// As far as the video goes.
+		await fireEvent.pointerMove(window, { clientX: 0, pointerId: 1 });
+		expect(props.view).toEqual({ start: 0, end: 5 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+	});
+
+	it('stands each end on the stretch, inside it, where its time is', () => {
+		const { props, from, to } = setup();
+		expect(from.style.getPropertyValue('--at')).toBe('0%');
+		expect(to.style.getPropertyValue('--at')).toBe('100%');
+		props.view = { start: 2, end: 5 };
+		flushSync();
+		expect(from.style.getPropertyValue('--at')).toBe('20%');
+		expect(to.style.getPropertyValue('--at')).toBe('50%');
+	});
+
 	it('moves along the video by dragging between its ends, as long as before', async () => {
 		const { props, stretch } = setup({ start: 2, end: 4 });
 		expect(stretch.style.left).toBe('20%');

@@ -513,8 +513,9 @@ const center = async (locator: Locator) => {
 };
 
 /**
- * Where on the track the time range starts and ends: each end's thumb stands
- * inside the range, the start's from where it starts, the end's up to where it ends.
+ * Where on its track the time range, or the stretch the zoom shows, starts and
+ * ends: each end's thumb stands inside, the start's from where it starts, the
+ * end's up to where it ends.
  */
 const startsAt = async (start: Locator) => (await start.boundingBox())!.x;
 const endsAt = async (end: Locator) => {
@@ -535,6 +536,16 @@ async function dragTo(page: Page, handle: Locator, x: number) {
 /** Drags `handle` `dx` pixels along, from its middle. */
 async function dragBy(page: Page, handle: Locator, dx: number) {
 	await dragTo(page, handle, (await center(handle)) + dx);
+}
+
+/** Drags a start's thumb, from its middle, until where it starts is at `x`. */
+async function dragStartTo(page: Page, start: Locator, x: number) {
+	await dragBy(page, start, x - (await startsAt(start)));
+}
+
+/** Drags an end's thumb, from its middle, until where it ends is at `x`. */
+async function dragEndTo(page: Page, end: Locator, x: number) {
+	await dragBy(page, end, x - (await endsAt(end)));
 }
 
 test.describe('the frame timeline', () => {
@@ -622,8 +633,8 @@ test.describe('the frame timeline', () => {
 		// The range's start is well inside that, its end (1.5 s) beyond it.
 		const bar = (await zoom.boundingBox())!;
 		const barPixel = 2 / bar.width;
-		await dragTo(page, zoomTo, bar.x + bar.width * 0.625);
-		await dragTo(page, zoomFrom, bar.x + bar.width * 0.125);
+		await dragEndTo(page, zoomTo, bar.x + bar.width * 0.625);
+		await dragStartTo(page, zoomFrom, bar.x + bar.width * 0.125);
 		const [from, to] = [await value(zoomFrom), await value(zoomTo)];
 		expect(Math.abs(from - 0.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
 		expect(Math.abs(to - 1.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
@@ -713,7 +724,7 @@ test.describe('the time range', () => {
 		expect(await violations()).toEqual([]);
 	});
 
-	test("keeps its ends on the track: flush with it at the clip's ends, moved as far as the pointer", async ({
+	test("keeps its ends on the track, flush with it at the clip's ends and in line with the zoom's", async ({
 		page
 	}) => {
 		const violations = await recordCspViolations(page);
@@ -723,6 +734,9 @@ test.describe('the time range', () => {
 		const track = dialog.getByRole('group', { name: 'Time range' });
 		const start = dialog.getByRole('slider', { name: 'Start' });
 		const end = dialog.getByRole('slider', { name: 'End' });
+		const zoom = dialog.getByRole('group', { name: 'Timeline zoom' });
+		const zoomFrom = dialog.getByRole('slider', { name: 'Zoom from' });
+		const zoomTo = dialog.getByRole('slider', { name: 'Zoom to' });
 		const value = async (slider: Locator) => Number(await slider.getAttribute('aria-valuenow'));
 		await expect(end).toHaveAttribute('aria-valuemax', '2', { timeout: 15_000 });
 		const box = (await track.boundingBox())!;
@@ -740,12 +754,23 @@ test.describe('the time range', () => {
 		await expect(start).toHaveAttribute('aria-valuenow', '0');
 		await expect(end).toHaveAttribute('aria-valuenow', '2');
 		await expectOnTrack();
-		// Nothing is drawn past either end of the track — not the ends, not the preview's
-		// mark at 0:00: just beside it, from above the ends' thumbs to below them, the dialog's
-		// own background alone.
+		// The zoom under it shows the whole clip: its ends' thumbs in line with the range's.
+		await expect(zoomFrom).toHaveAttribute('aria-valuenow', '0');
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '2');
+		expect(Math.abs((await startsAt(zoomFrom)) - left)).toBeLessThanOrEqual(0.5);
+		expect(Math.abs((await endsAt(zoomTo)) - right)).toBeLessThanOrEqual(0.5);
+		// Nothing is drawn past either end of the track or the zoom — not their ends, not the
+		// preview's mark at 0:00: just beside them, from above the range's thumbs to below the
+		// zoom's, the dialog's own background alone.
 		await expect(track.locator('.playhead')).toHaveCount(1);
+		const zoomBox = (await zoom.boundingBox())!;
 		for (const x of [Math.floor(left) - 4, Math.ceil(right)]) {
-			const clip = { x, y: box.y - 6, width: 4, height: box.height + 12 };
+			const clip = {
+				x,
+				y: box.y - 6,
+				width: 4,
+				height: zoomBox.y + zoomBox.height + 6 - (box.y - 6)
+			};
 			const { width, pixels } = decodePng(await page.screenshot({ clip }));
 			const color = (i: number) => pixels.subarray(i * 4, i * 4 + 4).join();
 			const drawn = [];
@@ -753,7 +778,7 @@ test.describe('the time range', () => {
 				if (color(i) !== color(0))
 					drawn.push(`(${i % width}, ${Math.floor(i / width)}) ${color(i)}`);
 			}
-			expect(drawn, `beside the track at x = ${x}, on ${color(0)}`).toEqual([]);
+			expect(drawn, `beside the track and the zoom at x = ${x}, on ${color(0)}`).toEqual([]);
 		}
 
 		// Dragged from their middles, the ends move as far as the pointer does: a quarter of the
