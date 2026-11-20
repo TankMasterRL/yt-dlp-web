@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { asset, resolve } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { getSession } from '#lib/engine/instance.ts';
 	import { engineStatus } from '#lib/engine/present.ts';
@@ -42,6 +42,9 @@
 		import.meta.env.YT_DLP_WEB_FFMPEG === 'remux'
 			? { name: 'FFmpeg', license: 'LGPL-2.1-or-later' }
 			: { name: 'ffmpeg.wasm', license: 'GPL-2.0-or-later' };
+	// Not asset(): its paths are typed by what static/ holds when svelte-kit sync runs,
+	// and ffmpeg/ is a build artifact (scripts/sync-assets.ts), absent from a checkout.
+	const ffmpegNotice = new URL('ffmpeg/NOTICE.txt', endpoints.assetsBase).href;
 	/** Whether this browser lets the app keep files (OPFS); null until asked. */
 	let canStore = $state<boolean | null>(null);
 	/** Library item ids started from this page, newest first. */
@@ -217,7 +220,7 @@
 							>Download best quality</button
 						>
 						<p class="license">
-							Merging uses <a href={asset('ffmpeg/NOTICE.txt')}>{ffmpeg.name}</a>
+							Merging uses <a href={ffmpegNotice}>{ffmpeg.name}</a>
 							({ffmpeg.license}), loaded only when you merge.
 						</p>
 					{:else if canMerge === false}
