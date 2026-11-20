@@ -38,6 +38,38 @@ class LaggingVideo extends FakeVideo {
 	}
 }
 
+/** A video whose seeks finish, and whose pictures reach the screen, when the test says. */
+class SteppedVideo extends FakeVideo {
+	#time = 0;
+	#callbacks: ((now: number, picture: { mediaTime: number }) => void)[] = [];
+
+	override get currentTime() {
+		return this.#time;
+	}
+
+	override set currentTime(time: number) {
+		this.seeks.push(time);
+		this.#time = time;
+		this.seeking = true;
+	}
+
+	requestVideoFrameCallback(callback: (now: number, picture: { mediaTime: number }) => void) {
+		return this.#callbacks.push(callback);
+	}
+
+	finishSeek() {
+		this.seeking = false;
+		this.dispatchEvent(new Event('seeked'));
+	}
+
+	/** Puts the picture at `time` on screen, and tells whoever asked. */
+	override present(time = this.#time) {
+		this.shown = time;
+		for (const callback of this.#callbacks.splice(0))
+			callback(performance.now(), { mediaTime: time });
+	}
+}
+
 /** A canvas whose pixels say what was on screen: red = the time of the picture shown. */
 function fakeCanvas(video: FakeVideo) {
 	const draws: unknown[][] = [];
@@ -85,6 +117,22 @@ describe('videoFrames', () => {
 		const crop = { x: 0, y: 0, width: 4, height: 4 };
 		const pixels = await frames.frameAt(0.7, crop, { width: 2, height: 2 });
 		expect(pixels[0]).toBe(70);
+	});
+
+	it('waits for its own picture, not one an earlier seek puts on screen while it runs', async () => {
+		// The frame timeline starts afresh at each move of a zoom drag: the seek it gave up on
+		// can still put its picture on screen while the next one is seeking.
+		const video = new SteppedVideo();
+		video.currentTime = 0.4; // the seek given up on, still under way
+		let done = false;
+		const seeking = seek(video, 0.3).then(() => (done = true));
+		video.present(0.4);
+		video.finishSeek();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(done).toBe(false);
+		video.present(0.3);
+		await seeking;
+		expect(video.shown).toBe(0.3);
 	});
 
 	it('takes the picture anyway when no new one is ever shown', async () => {

@@ -176,9 +176,15 @@ export async function seek(
 	signal?.throwIfAborted();
 	// A seek to where the video already is may never report back.
 	if (video.currentTime === time && !video.seeking && video.readyState >= HAVE_CURRENT_DATA) return;
-	// Asked before seeking: the video is paused, so the next picture shown is the one sought.
+	// Asked before seeking: the video is paused, so the next picture shown is the one sought —
+	// once the seek is done. One shown while it still runs is an earlier seek's: the frame
+	// timeline gives up on a seek at each move of a zoom drag, and its picture can still arrive.
 	const shown = video.requestVideoFrameCallback
-		? new Promise<void>((resolve) => video.requestVideoFrameCallback!(() => resolve()))
+		? new Promise<void>((resolve) => {
+				const callback = () =>
+					video.seeking ? video.requestVideoFrameCallback!(callback) : resolve();
+				video.requestVideoFrameCallback!(callback);
+			})
 		: null;
 	const seeked = until(video, 'seeked', signal);
 	video.currentTime = time;
