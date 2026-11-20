@@ -230,9 +230,9 @@
 			<h2 id="animate-title">Make an animated image</h2>
 			<p class="source">{item.title}</p>
 		</div>
-		<button type="button" onclick={() => dialog.close()} aria-label="Close the animation maker"
-			>Close</button
-		>
+		<button type="button" onclick={() => dialog.close()} aria-label="Close the animation maker">
+			Close
+		</button>
 	</header>
 
 	<div class="body">
@@ -280,8 +280,9 @@
 				<p class="readout" aria-live="polite">
 					<span>Start <strong>{formatClipTime(editor.range.start)}</strong></span>
 					<span>End <strong>{formatClipTime(editor.range.end)}</strong></span>
-					<span>Length <strong>{(editor.range.end - editor.range.start).toFixed(1)} s</strong></span
-					>
+					<span>
+						Length <strong>{(editor.range.end - editor.range.start).toFixed(1)} s</strong>
+					</span>
 					<span>Crop <strong>{editor.crop.width} × {editor.crop.height}</strong></span>
 					{#if editor.sourceFps}
 						<span>Video <strong>{formatFps(editor.sourceFps)} fps</strong></span>
@@ -293,13 +294,17 @@
 					<button
 						type="button"
 						onclick={() => (previewing ? stopPreview() : startPreview())}
-						disabled={editor.rendering}>{previewing ? 'Stop preview' : 'Preview'}</button
+						disabled={editor.rendering}
 					>
+						{previewing ? 'Stop preview' : 'Preview'}
+					</button>
 					<button
 						type="button"
 						onclick={() => (editor.crop = fullFrame(editor.media!))}
-						disabled={editor.rendering}>Reset crop</button
+						disabled={editor.rendering}
 					>
+						Reset crop
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -311,11 +316,11 @@
 						Format
 						<select bind:value={editor.format} disabled={editor.rendering} data-formats={asked}>
 							{#each FORMAT_ORDER as format (format)}
-								<option value={format} disabled={support?.[format] === false}
-									>{FORMATS[format].label}{support?.[format] === false
+								<option value={format} disabled={support?.[format] === false}>
+									{FORMATS[format].label}{support?.[format] === false
 										? ' (not in this browser)'
-										: ''}</option
-								>
+										: ''}
+								</option>
 							{/each}
 						</select>
 					</label>
@@ -323,9 +328,9 @@
 						<label>
 							Quality
 							<select bind:value={editor.quality} disabled={editor.rendering}>
-								{#each QUALITY_CHOICES as quality (quality)}<option value={quality}
-										>{quality}</option
-									>{/each}
+								{#each QUALITY_CHOICES as quality (quality)}<option value={quality}>
+										{quality}
+									</option>{/each}
 							</select>
 						</label>
 					{/if}
@@ -411,8 +416,10 @@
 						class="primary"
 						onclick={create}
 						disabled={editor.tooLong}
-						aria-describedby="animate-summary">Create {spec.label}</button
+						aria-describedby="animate-summary"
 					>
+						Create {spec.label}
+					</button>
 				{/if}
 			</div>
 			{#if editor.tooLong}

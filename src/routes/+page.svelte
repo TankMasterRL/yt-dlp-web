@@ -113,9 +113,9 @@
 			page may not read them itself.
 		</p>
 		<p>
-			Everything else works, right here in your browser: <a href={resolve('library/')}
-				>import videos you already have</a
-			> into the library, play them, and make animated images from them. Nothing is uploaded anywhere.
+			Everything else works, right here in your browser: <a href={resolve('library/')}>
+				import videos you already have
+			</a> into the library, play them, and make animated images from them. Nothing is uploaded anywhere.
 		</p>
 	</section>
 {:else}
@@ -216,9 +216,9 @@
 					{#if canStore === false}
 						<!-- Nothing can be kept here; the storage note above says why. -->
 					{:else if canMerge}
-						<button class="primary" type="button" onclick={downloadMerged}
-							>Download best quality</button
-						>
+						<button class="primary" type="button" onclick={downloadMerged}>
+							Download best quality
+						</button>
 						<p class="license">
 							Merging uses <a href={ffmpegNotice}>{ffmpeg.name}</a>
 							({ffmpeg.license}), loaded only when you merge.
