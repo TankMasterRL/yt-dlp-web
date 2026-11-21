@@ -19,6 +19,18 @@ export async function recordCspViolations(page: Page): Promise<() => Promise<str
 		);
 }
 
+/**
+ * What `recordCspViolations` records for the `<style>body {}</style>` Playwright's
+ * WebKit appends to the page before every screenshot, whatever the options, to sync
+ * its animations (`WKPage.shouldToggleStyleSheetToSyncAnimations`): the app's
+ * `style-src` refuses it, and it has no source file. Chromium and Firefox add none.
+ */
+export const SCREENSHOT_STYLE = 'style-src-elem: inline @ ';
+
+/** The page's own violations, in a spec that takes screenshots: all but those of its screenshots. */
+export const ownViolations = (violations: string[]): string[] =>
+	violations.filter((violation) => violation !== SCREENSHOT_STYLE);
+
 /** CSP / Trusted Types violations inside workers only reach the console. */
 export function recordConsoleCsp(page: Page): string[] {
 	const messages: string[] = [];

@@ -89,14 +89,55 @@ describe('ZoomBar', () => {
 		await fireEvent.pointerUp(window, { pointerId: 1 });
 	});
 
-	it('stands each end on the stretch, inside it, where its time is', () => {
-		const { props, from, to } = setup();
-		expect(from.style.getPropertyValue('--at')).toBe('0%');
-		expect(to.style.getPropertyValue('--at')).toBe('100%');
+	it('tells its handles where the stretch starts and ends', () => {
+		const { props, bar } = setup();
+		expect(bar.style.getPropertyValue('--from')).toBe('0%');
+		expect(bar.style.getPropertyValue('--to')).toBe('100%');
 		props.view = { start: 2, end: 5 };
 		flushSync();
-		expect(from.style.getPropertyValue('--at')).toBe('20%');
-		expect(to.style.getPropertyValue('--at')).toBe('50%');
+		expect(bar.style.getPropertyValue('--from')).toBe('20%');
+		expect(bar.style.getPropertyValue('--to')).toBe('50%');
+	});
+
+	it('has no tab while it shows the whole video: there is nowhere to move', () => {
+		setup();
+		expect(screen.queryByRole('slider', { name: 'Move the zoom' })).toBeNull();
+	});
+
+	it('moves the stretch along by a tab under it, as long as before, until released', async () => {
+		const { props } = setup({ start: 2, end: 4 });
+		const tab = screen.getByRole('slider', { name: 'Move the zoom' });
+		expect(tab).toHaveAttribute('aria-valuenow', '2');
+		expect(tab).toHaveAttribute('aria-valuemin', '0');
+		expect(tab).toHaveAttribute('aria-valuemax', '8');
+		expect(tab).toHaveAttribute('aria-valuetext', '0:02.0 to 0:04.0');
+		expect(tab.style.getPropertyValue('--middle')).toBe('30%');
+		// However narrow the stretch, its tab is there to take: pressed, nothing moves yet.
+		await fireEvent.pointerDown(tab, { clientX: 160, button: 0, pointerId: 1 });
+		expect(tab).toHaveFocus();
+		expect(props.view).toEqual({ start: 2, end: 4 });
+		await fireEvent.pointerMove(window, { clientX: 200, pointerId: 1 });
+		expect(props.view).toEqual({ start: 4, end: 6 });
+		await fireEvent.pointerMove(window, { clientX: 400, pointerId: 1 });
+		expect(props.view).toEqual({ start: 8, end: 10 });
+		await fireEvent.pointerUp(window, { pointerId: 1 });
+		await fireEvent.pointerMove(window, { clientX: 160, pointerId: 1 });
+		expect(props.view).toEqual({ start: 8, end: 10 });
+	});
+
+	it('moves the stretch from the keyboard by its tab: tenths, seconds with Shift or Page keys, to either end', async () => {
+		const { props } = setup({ start: 2, end: 4 });
+		const tab = screen.getByRole('slider', { name: 'Move the zoom' });
+		await fireEvent.keyDown(tab, { key: 'ArrowRight' });
+		expect(props.view).toEqual({ start: 2.1, end: 4.1 });
+		await fireEvent.keyDown(tab, { key: 'ArrowLeft', shiftKey: true });
+		expect(props.view).toEqual({ start: 1.1, end: 3.1 });
+		await fireEvent.keyDown(tab, { key: 'PageUp' });
+		expect(props.view).toEqual({ start: 2.1, end: 4.1 });
+		await fireEvent.keyDown(tab, { key: 'End' });
+		expect(props.view).toEqual({ start: 8, end: 10 });
+		await fireEvent.keyDown(tab, { key: 'Home' });
+		expect(props.view).toEqual({ start: 0, end: 2 });
 	});
 
 	it('moves along the video by dragging between its ends, as long as before', async () => {
