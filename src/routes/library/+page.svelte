@@ -10,9 +10,9 @@
 		exportFileName,
 		libraryBytes,
 		progressLabel,
-		statusLabel,
-		storageRoom
+		statusLabel
 	} from '#lib/storage/present.ts';
+	import { quotaReporter, storageRoom } from '#lib/storage/quota.ts';
 	import AnimationDialog from '#lib/ui/AnimationDialog.svelte';
 	import PlayerDialog from '#lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '#lib/ui/save.ts';
@@ -82,7 +82,7 @@
 	async function refreshStorage() {
 		// Some engines and private windows offer no storage manager at all.
 		if (!navigator.storage) return;
-		room = storageRoom(await navigator.storage.estimate());
+		room = storageRoom(await navigator.storage.estimate(), quotaReporter(navigator));
 		persisted = await navigator.storage.persisted();
 	}
 

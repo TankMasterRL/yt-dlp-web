@@ -137,9 +137,11 @@ shows how much storage it uses: the bytes of its own items (each file as far as 
 it runs, and its thumbnail), counted from the library itself (`libraryBytes`). The browser's
 `navigator.storage.estimate()` covers the whole origin — every app served from the same address,
 such as `localhost` or a `github.io` account — so it only says how much more fits, and only where
-its quota can be a limit (`storageRoom`). Brave reports the same 2 GiB quota to every site beside
-the real usage, and Chromium reports usage + 10 GiB, both by design; in Brave the page names no
-room at all, rather than "0 B" once the library passes 2 GiB.
+its quota can be a limit (`src/lib/storage/quota.ts`). Some browsers report a quota that is no
+limit, by design, so the figure cannot tell sites or private windows apart; each is matched by its
+own rule, in that browser only: Brave reports the same 2 GiB to every site beside the real usage
+(once past 2 GiB, the page said "room for 0 B more"), and Chromium reports usage plus a whole
+1–10 GiB. There the page names no room at all; Firefox's and Safari's quotas are shown as they come.
 
 ### Importing from the device
 

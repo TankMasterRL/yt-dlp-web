@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LibraryItem } from './db';
-import {
-	BRAVE_QUOTA,
-	exportFileName,
-	libraryBytes,
-	progressLabel,
-	statusLabel,
-	storageRoom
-} from './present';
+import { exportFileName, libraryBytes, progressLabel, statusLabel } from './present';
 
 describe('exportFileName', () => {
 	it('builds "<title> [<format>].<ext>"', () => {
@@ -101,33 +94,5 @@ describe('libraryBytes', () => {
 
 	it('is nothing for an empty library', () => {
 		expect(libraryBytes([], {})).toBe(0);
-	});
-});
-
-describe('storageRoom', () => {
-	const GiB = 2 ** 30;
-
-	it('is what the quota leaves of what the site uses', () => {
-		expect(storageRoom({ usage: 3 * GiB, quota: 10 * GiB })).toBe(7 * GiB);
-		expect(storageRoom({ quota: 10 * GiB })).toBe(10 * GiB);
-		// Used up to the byte: the quota may well be real, and full.
-		expect(storageRoom({ usage: 10 * GiB, quota: 10 * GiB })).toBe(0);
-	});
-
-	it('says nothing where the browser gives no quota', () => {
-		expect(storageRoom({})).toBeNull();
-		expect(storageRoom({ usage: GiB, quota: 0 })).toBeNull();
-	});
-
-	// Brave reports the same quota to every site, whatever it stores and whatever
-	// it may store: with a library past 2 GiB the page said "room for 0 B more".
-	it("says nothing of Brave's fixed quota, above it or below it", () => {
-		expect(BRAVE_QUOTA).toBe(2147483648);
-		expect(storageRoom({ usage: 3 * GiB, quota: BRAVE_QUOTA })).toBeNull();
-		expect(storageRoom({ usage: GiB / 2, quota: BRAVE_QUOTA })).toBeNull();
-	});
-
-	it('says nothing of a quota the site has already gone past: it is no limit', () => {
-		expect(storageRoom({ usage: 5 * GiB + 1, quota: 5 * GiB })).toBeNull();
 	});
 });
