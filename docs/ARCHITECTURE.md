@@ -211,10 +211,13 @@ The dialog plays the file from a `blob:` URL, like the player, and lays two cont
   on a canvas only while it is in the page and on screen. Over the range, a mark stands where each
   of the animation's frames will be taken, wherever the marks are far enough apart to tell. Under
   it, a zoom bar (`ZoomBar.svelte`) shows the whole video with the range marked on it; its two ends
-  choose the stretch the track shows (at least half a second), and dragging between them moves along
-  the video. Zoomed in, the pictures, the frame marks and every pointer drag are of that stretch
-  alone, so an end can be set picture by picture; what falls outside is hidden, and the keyboard
-  moves the stretch along to show what it moves or focuses.
+  choose the stretch the track shows (at least half a second), and dragging between them, or the
+  tab hanging under it while zoomed in (a slider too), moves along the video. Zoomed in, the
+  pictures, the frame marks and every pointer drag are of that stretch alone, so an end can be set
+  picture by picture; what falls outside is hidden, and the keyboard moves the stretch along to show
+  what it moves or focuses, with room for its thumb. Both rows' end thumbs stand inside what they
+  bound, flush with the track at its ends; where that is narrower than the two thumbs, they stand
+  side by side, meeting at its middle, so both stay in reach.
 - **A crop**: a box with eight handles over the picture (`CropBox.svelte`), in the video's own
   pixels. The stage has exactly the video's shape, so the box's percentages are the picture's.
 

@@ -9,7 +9,7 @@ import { oracle } from '../helpers/oracle';
 import { readAnimatedWebp, stillWebp } from '../helpers/webp';
 import { expect, test } from './fixtures';
 import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, probe } from './app';
-import { recordConsoleCsp, recordCspViolations } from './csp';
+import { ownViolations, recordConsoleCsp, recordCspViolations } from './csp';
 import { FIXTURE_PATH, pickFiles } from './device';
 
 const FIXTURE = new Uint8Array(
@@ -42,6 +42,33 @@ async function scaledFixtureFrames(width: number, height: number): Promise<Uint8
 	return ff.withFile('clip.webm', FIXTURE, (path) =>
 		ff.rawFrames(['-i', path, '-vf', `scale=${width}:${height}`], width, height)
 	);
+}
+
+/**
+ * Ten minutes of one still picture, a frame a second, made by ffmpeg.wasm: no fixture is
+ * that long. Over it, the default 5 s range and the shortest zoom are narrower than a thumb.
+ */
+async function tenMinutes(): Promise<{ name: string; mimeType: string; buffer: Buffer }> {
+	const ff = await reference();
+	const source = 'color=c=0x3366aa:size=160x90:rate=1:duration=600';
+	ff.run([
+		'-f',
+		'lavfi',
+		'-i',
+		source,
+		'-c:v',
+		'libvpx',
+		'-b:v',
+		'20k',
+		'-f',
+		'webm',
+		'/long.webm'
+	]);
+	return {
+		name: 'ten-minutes.webm',
+		mimeType: 'video/webm',
+		buffer: Buffer.from(ff.take('/long.webm'))
+	};
 }
 
 /** When picture k of the fixture starts: k/12 s, which WebM rounds to the millisecond. */
@@ -523,6 +550,21 @@ const endsAt = async (end: Locator) => {
 	return x + width;
 };
 
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+
+/**
+ * Two thumbs on a track (its box), side by side: the first wholly before the second, both
+ * on the track, and each the one a press at its middle lands on.
+ */
+async function expectApartAndInReach(track: Box, first: Locator, second: Locator) {
+	const [a, b] = [(await first.boundingBox())!, (await second.boundingBox())!];
+	expect(a.x).toBeGreaterThanOrEqual(track.x - 0.5);
+	expect(a.x + a.width).toBeLessThanOrEqual(b.x + 0.5);
+	expect(b.x + b.width).toBeLessThanOrEqual(track.x + track.width + 0.5);
+	// Only the checks a click makes, the one a covered element fails: nothing in the way.
+	for (const thumb of [first, second]) await thumb.click({ trial: true, timeout: 5_000 });
+}
+
 /** Drags `handle` across to `x`, from its middle. */
 async function dragTo(page: Page, handle: Locator, x: number) {
 	const box = (await handle.boundingBox())!;
@@ -589,6 +631,14 @@ test.describe('the frame timeline', () => {
 		// Six pictures in: half a second.
 		for (let i = 0; i < 6; i++) await start.press('ArrowRight');
 		await expectMarksOfRange(18);
+		// The first frame's mark shows over the Start thumb, which stands on it: a light line on
+		// the thumb's accent, where the marks run along the track's foot.
+		const thumb = (await start.boundingBox())!;
+		const ticks = (await marks.boundingBox())!;
+		const clip = { x: thumb.x, y: ticks.y + 1, width: 3, height: ticks.height - 2 };
+		const { pixels } = decodePng(await page.screenshot({ clip }));
+		const light = pixels.filter((_, i) => i % 4 === 1 && pixels[i] >= 128).length;
+		expect(light, "light pixels of the first frame's mark over the Start thumb").toBeGreaterThan(0);
 		await dialog.getByLabel('Frame rate').selectOption({ label: '10 fps' });
 		await expectMarksOfRange(15);
 
@@ -601,7 +651,8 @@ test.describe('the frame timeline', () => {
 			.poll(async () => Math.abs(Number(await start.getAttribute('aria-valuenow')) - 0.2))
 			.toBeLessThanOrEqual(2 / trackWidth + 0.001);
 
-		expect(await violations()).toEqual([]);
+		// Taking a screenshot, Playwright's WebKit trips the page's CSP itself (`SCREENSHOT_STYLE`).
+		expect(ownViolations(await violations())).toEqual([]);
 	});
 
 	test('zooms in on a stretch by the handles under it, to set the range picture by picture', async ({
@@ -766,14 +817,8 @@ test.describe('the time range', () => {
 		// preview's mark at 0:00: just beside them, from above the range's thumbs to below the
 		// zoom's, the dialog's own background alone.
 		await expect(track.locator('.playhead')).toHaveCount(1);
-		// Before each screenshot, Playwright's WebKit appends a `<style>body {}</style>` to the
-		// page to sync its animations (WKPage's shouldToggleStyleSheetToSyncAnimations), and the
-		// page's CSP refuses it: a style-src-elem violation with no source file. So the page's
-		// own violations are read first, and after the screenshots only those may follow.
-		expect(await violations()).toEqual([]);
 		const zoomBox = (await zoom.boundingBox())!;
-		const besides = [Math.floor(left) - 4, Math.ceil(right)];
-		for (const x of besides) {
+		for (const x of [Math.floor(left) - 4, Math.ceil(right)]) {
 			const clip = {
 				x,
 				y: box.y - 6,
@@ -806,10 +851,8 @@ test.describe('the time range', () => {
 		await expect(end).toHaveAttribute('aria-valuenow', '2');
 		await expectOnTrack();
 
-		const screenshotStyle = 'style-src-elem: inline @ ';
-		const seen = await violations();
-		expect(seen.filter((violation) => violation !== screenshotStyle)).toEqual([]);
-		expect(seen.length).toBeLessThanOrEqual(besides.length);
+		// Taking screenshots, Playwright's WebKit trips the page's CSP itself (`SCREENSHOT_STYLE`).
+		expect(ownViolations(await violations())).toEqual([]);
 	});
 
 	test("steps a picture at a time with the arrow keys, once it knows the clip's rate", async ({
@@ -860,6 +903,97 @@ test.describe('the time range', () => {
 		// The end steps back from the clip's end a picture at a time.
 		await end.press('ArrowLeft');
 		await expect(end).toHaveAttribute('aria-valuenow', String(pictureStart(23)));
+
+		expect(await violations()).toEqual([]);
+	});
+});
+
+test.describe('the timeline of a long video', () => {
+	test('keeps the ends of a short range and of a narrow zoom apart and in reach, and the zoom moves by its tab', async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		const clip = await tenMinutes();
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [clip]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const track = dialog.getByRole('group', { name: 'Time range' });
+		const zoom = dialog.getByRole('group', { name: 'Timeline zoom' });
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		const tab = dialog.getByRole('slider', { name: 'Move the range' });
+		const zoomFrom = dialog.getByRole('slider', { name: 'Zoom from' });
+		const zoomTo = dialog.getByRole('slider', { name: 'Zoom to' });
+		const zoomTab = dialog.getByRole('slider', { name: 'Move the zoom' });
+		const value = async (slider: Locator) => Number(await slider.getAttribute('aria-valuenow'));
+		await expect(end).toHaveAttribute('aria-valuemax', '600', { timeout: 15_000 });
+		const box = (await track.boundingBox())!;
+		const bar = (await zoom.boundingBox())!;
+		const at = (time: number) => box.x + (time / 600) * box.width;
+
+		// Its first five seconds, narrower than a thumb: the two stand side by side from the
+		// track's start, each in reach.
+		await expect(start).toHaveAttribute('aria-valuenow', '0');
+		await expect(end).toHaveAttribute('aria-valuenow', '5');
+		expect((5 / 600) * box.width).toBeLessThan((await start.boundingBox())!.width);
+		await expectApartAndInReach(box, start, end);
+		expect(Math.abs((await startsAt(start)) - box.x)).toBeLessThanOrEqual(0.5);
+
+		// Moved to the video's end, up to the track's end.
+		await tab.press('End');
+		await expect(end).toHaveAttribute('aria-valuenow', '600');
+		await expectApartAndInReach(box, start, end);
+		expect(Math.abs((await endsAt(end)) - (box.x + box.width))).toBeLessThanOrEqual(0.5);
+
+		// Half the track back, they meet where the range's middle is.
+		await dragBy(page, tab, -box.width / 2);
+		const [from, to] = [await value(start), await value(end)];
+		expect(to - from).toBeCloseTo(5, 3);
+		await expectApartAndInReach(box, start, end);
+		expect(Math.abs((await endsAt(start)) - at((from + to) / 2))).toBeLessThanOrEqual(1);
+		expect(Math.abs((await startsAt(end)) - at((from + to) / 2))).toBeLessThanOrEqual(1);
+
+		// Each still takes a drag: the end a tenth of the track on, then the start a tenth back,
+		// a minute each, to two screen pixels' worth.
+		await dragBy(page, end, box.width / 10);
+		await dragBy(page, start, -box.width / 10);
+		const pixel = 600 / box.width;
+		expect(Math.abs((await value(end)) - (to + 60))).toBeLessThanOrEqual(2 * pixel + 0.001);
+		expect(Math.abs((await value(start)) - (from - 60))).toBeLessThanOrEqual(2 * pixel + 0.001);
+
+		// The shortest zoom, half a second of ten minutes, under a pixel of the bar: its handles
+		// stand side by side too, each in reach.
+		await expect(zoomTab).toHaveCount(0);
+		await zoomTo.press('Home');
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '0.5');
+		await expectApartAndInReach(bar, zoomFrom, zoomTo);
+
+		// Its tab moves it along, as long as before: a quarter of the bar, a quarter of the video.
+		await dragBy(page, zoomTab, bar.width / 4);
+		const barPixel = 600 / bar.width;
+		expect(Math.abs((await value(zoomFrom)) - 150)).toBeLessThanOrEqual(2 * barPixel + 0.001);
+		expect((await value(zoomTo)) - (await value(zoomFrom))).toBeCloseTo(0.5, 3);
+		await expectApartAndInReach(bar, zoomFrom, zoomTo);
+		await zoomTab.press('End');
+		await expect(zoomTab).toHaveAttribute('aria-valuetext', '9:59.5 to 10:00.0');
+
+		// Zoomed in on 5.5 s from the start, the start stepped a second at a time out past it:
+		// the timeline follows with room for its thumb, which still shows from its time.
+		await zoomTab.press('Home');
+		for (let i = 0; i < 5; i++) await zoomTo.press('Shift+ArrowRight');
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '5.5');
+		await start.press('Home');
+		await expect(start).toHaveAttribute('aria-valuenow', '0');
+		for (let k = 1; k <= 6; k++) {
+			await start.press('Shift+ArrowRight');
+			await expect(start).toHaveAttribute('aria-valuenow', String(k));
+			const [viewFrom, viewTo] = [await value(zoomFrom), await value(zoomTo)];
+			const shownAt = (time: number) =>
+				box.x + ((time - viewFrom) / (viewTo - viewFrom)) * box.width;
+			expect(Math.abs((await startsAt(start)) - shownAt(k)), `${k} s`).toBeLessThanOrEqual(1);
+			expect(await endsAt(start)).toBeLessThanOrEqual(box.x + box.width + 0.5);
+		}
+		await expect(zoomTo).not.toHaveAttribute('aria-valuenow', '5.5');
 
 		expect(await violations()).toEqual([]);
 	});

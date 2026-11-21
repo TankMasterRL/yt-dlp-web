@@ -75,6 +75,12 @@
 	/** What shows of the range, across the track. */
 	const left = $derived(onTrack(range.start));
 	const right = $derived(onTrack(range.end));
+	/** Both ends on the track: their thumbs make room for each other. */
+	const paired = $derived(showing(range.start) && showing(range.end));
+	/** Where the frame marks run, across the track. */
+	const marked = $derived(
+		marks ? { left: percent(marks.start), width: (marks.length / shownLength) * 100 } : null
+	);
 
 	function timeAt(clientX: number): number {
 		const rect = track.getBoundingClientRect();
@@ -105,6 +111,17 @@
 		if (!pressing) reveal(...times);
 	}
 
+	/**
+	 * What an end's thumb covers of the video, its end's own time last: the thumb stands
+	 * inside the range, from where it starts or up to where it ends, so showing the time
+	 * alone could leave the thumb running past the track, on the far side of it.
+	 */
+	function thumbTimes(edge: Edge, thumb: HTMLElement): number[] {
+		const width = track.getBoundingClientRect().width;
+		const covers = width ? (thumb.getBoundingClientRect().width / width) * shownLength : 0;
+		return edge === 'start' ? [range.start + covers, range.start] : [range.end - covers, range.end];
+	}
+
 	function setEdge(edge: Edge, time: number) {
 		const next = setRangeEdge(range, edge, time, duration);
 		if (next.start === range.start && next.end === range.end) return;
@@ -118,7 +135,7 @@
 		if (target === undefined) return;
 		event.preventDefault();
 		setEdge(edge, target);
-		reveal(range[edge]);
+		reveal(...thumbTimes(edge, event.currentTarget as HTMLElement));
 	}
 
 	/**
@@ -177,28 +194,24 @@
 	class="slider"
 	class:disabled
 	class:pictured={children}
+	class:paired
 	role="group"
 	aria-label="Time range"
+	style:--from="{left}%"
+	style:--to="{right}%"
 	bind:this={track}
 	onpointerdown={grabTrack}
 	{@attach observeSize((size) => (trackWidth = size.width))}
 >
-	{#if children || marks}
+	{#if children}
 		<!-- What the track shows: under the controls, clipped to its corners, in no pointer's way. -->
 		<div class="layers" aria-hidden="true">
-			{#if children}
-				{@render children()}
-				<div class="dim" style:left="0" style:width="{left}%"></div>
-				<div class="dim" style:left="{right}%" style:right="0"></div>
-			{/if}
-			{#if marks}
-				<div
-					class="marks"
-					data-frames={marks.count}
-					style:left="{percent(marks.start)}%"
-					style:width="{(marks.length / shownLength) * 100}%"
-					style:--frames={marks.count}
-				></div>
+			{@render children()}
+			<div class="dim" style:left="0" style:width="{left}%"></div>
+			<div class="dim" style:left="{right}%" style:right="0"></div>
+			{#if marked}
+				<!-- Under the frames' marks, a darker band to read them on. -->
+				<div class="band" style:left="{marked.left}%" style:width="{marked.width}%"></div>
 			{/if}
 		</div>
 	{/if}
@@ -218,6 +231,7 @@
 	{#each EDGES as edge (edge)}
 		<!--
 			Inside the range, from its start or up to its end: never past the track's ends.
+			Side by side, meeting at its middle, where the range is narrower than both.
 			Out of view, still there for the keyboard, which brings it into view.
 		-->
 		<div
@@ -231,12 +245,26 @@
 			aria-valuenow={range[edge]}
 			aria-valuetext={formatClipTime(range[edge])}
 			aria-disabled={disabled}
-			style:--at="{onTrack(range[edge])}%"
-			onfocus={() => focused(range[edge])}
+			onfocus={(e) => focused(...thumbTimes(edge, e.currentTarget))}
 			onkeydown={(e) => keydown(edge, e)}
 			onpointerdown={(e) => grabEdge(edge, e)}
 		></div>
 	{/each}
+	{#if marks && marked}
+		<!--
+			Over the thumbs, so the range's first and last frames show their marks too:
+			clipped to the track's corners, in no pointer's way.
+		-->
+		<div class="layers over" aria-hidden="true">
+			<div
+				class="marks"
+				data-frames={marks.count}
+				style:left="{marked.left}%"
+				style:width="{marked.width}%"
+				style:--frames={marks.count}
+			></div>
+		</div>
+	{/if}
 	<!-- A tab hanging under the middle of the range (of what shows of it): drags the whole range. -->
 	<div
 		class="tab"
@@ -287,15 +315,24 @@
 		background: rgb(0 0 0 / 0.55);
 	}
 
+	/* The marks over the thumbs: later than they are, at their level. */
+	.over {
+		z-index: 1;
+	}
+
+	.marks,
+	.band {
+		position: absolute;
+		bottom: 3px;
+		height: 0.45rem;
+	}
+
 	/*
 	 * A short line where each frame is taken, along the bottom: one gradient over
 	 * the whole stretch, not a tiled one, whose tiles browsers round to whole pixels.
 	 */
 	.marks {
 		--mark: var(--accent);
-		position: absolute;
-		bottom: 3px;
-		height: 0.45rem;
 		background-image: repeating-linear-gradient(
 			to right,
 			var(--mark) 0 1px,
@@ -305,7 +342,10 @@
 
 	.pictured .marks {
 		--mark: #fff;
-		background-color: rgb(0 0 0 / 0.4);
+	}
+
+	.band {
+		background: rgb(0 0 0 / 0.4);
 	}
 
 	.selection {
@@ -345,8 +385,8 @@
 
 	/*
 	 * Each end's thumb stands inside the range, its outer edge where the range starts or
-	 * ends: at the track's ends it is flush with them, never hanging past. Where a short
-	 * range brings them together, each still stays on the track.
+	 * ends (`--from`, `--to`): at the track's ends it is flush with them, never hanging
+	 * past. An end alone on the track (the other out of view) is kept on it.
 	 */
 	.thumb {
 		--width: var(--timeline-thumb);
@@ -363,11 +403,32 @@
 	}
 
 	.thumb.start {
-		left: min(var(--at), 100% - var(--width));
+		left: min(var(--from), 100% - var(--width));
 	}
 
 	.thumb.end {
-		left: max(var(--at) - var(--width), 0px);
+		left: max(var(--to) - var(--width), 0px);
+	}
+
+	/*
+	 * Both on the track: a range narrower than the two thumbs sets them side by side,
+	 * meeting at its middle, the start's first — kept on the track, so near either of
+	 * its ends they meet off the middle. Wider, these are the rules above.
+	 */
+	.paired .thumb.start {
+		left: clamp(
+			0px,
+			min(var(--from), (var(--from) + var(--to)) / 2 - var(--width)),
+			100% - 2 * var(--width)
+		);
+	}
+
+	.paired .thumb.end {
+		left: clamp(
+			var(--width),
+			max(var(--to) - var(--width), (var(--from) + var(--to)) / 2),
+			100% - var(--width)
+		);
 	}
 
 	/* Fingers need more than the thumb shows: a wider, invisible grip around it. */

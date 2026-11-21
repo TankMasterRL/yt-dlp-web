@@ -7,7 +7,7 @@
 		type TimeRange
 	} from '#lib/animate/clip.ts';
 	import { followPointer } from './drag';
-	import { edgeTarget } from './slider-keys';
+	import { edgeTarget, moveDelta } from './slider-keys';
 
 	type Edge = 'start' | 'end';
 
@@ -29,6 +29,8 @@
 	const shown = $derived(view ?? { start: 0, end: duration });
 	const zoomed = $derived(shown.start > 0 || shown.end < duration);
 	const span = $derived(Math.min(MIN_VIEW, duration));
+	/** As late as the stretch can start, its length kept. */
+	const latest = $derived(moveRange(shown, duration, duration).start);
 	const percent = (time: number) => (duration > 0 ? (time / duration) * 100 : 0);
 
 	function timeAt(clientX: number): number {
@@ -61,19 +63,30 @@
 		followPointer(event, (e) => setEdge(edge, from + timeAt(e.clientX) - origin));
 	}
 
+	/** The stretch shown moved `delta` seconds along the video, as long as it is. */
+	function moveBy(delta: number, from = shown) {
+		const next = moveRange(from, delta, duration);
+		if (next.start !== shown.start) view = next;
+	}
+
+	function moveKeydown(event: KeyboardEvent) {
+		const delta = moveDelta(event, shown.start, duration);
+		if (delta === undefined) return;
+		event.preventDefault();
+		moveBy(delta);
+	}
+
 	/**
-	 * Between the ends: moves the stretch shown along the video, as long as it is. Showing
-	 * all of it, there is nowhere to move: the press is the bar's, and zooms in.
+	 * Between the ends, or the tab under them: moves the stretch shown along the video.
+	 * Showing all of it, there is nowhere to move: the press is the bar's, and zooms in.
 	 */
-	function grabStretch(event: PointerEvent) {
+	function grabStretch(event: PointerEvent, focus = false) {
 		if (event.button !== 0 || !zoomed) return;
 		event.stopPropagation();
+		if (focus) (event.currentTarget as HTMLElement).focus();
 		const from = shown;
 		const origin = timeAt(event.clientX);
-		followPointer(event, (e) => {
-			const next = moveRange(from, timeAt(e.clientX) - origin, duration);
-			if (next.start !== shown.start) view = next;
-		});
+		followPointer(event, (e) => moveBy(timeAt(e.clientX) - origin, from));
 	}
 
 	/** Pressing the bare bar brings the nearer end there, to drag on. */
@@ -91,13 +104,15 @@
 	timeline shows, so a range can be set picture by picture.
 -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<!-- Pointer shortcuts only: the two sliders inside do the same from the keyboard. -->
+<!-- Pointer shortcuts only: the sliders inside do the same from the keyboard. -->
 <div
 	class="zoom"
 	class:zoomed
 	role="group"
 	aria-label="Timeline zoom"
-	title="Drag the ends to zoom the timeline in; drag between them to move along the video"
+	title="Drag the ends to zoom the timeline in; drag between them, or the tab under them, to move along the video"
+	style:--from="{percent(shown.start)}%"
+	style:--to="{percent(shown.end)}%"
 	bind:this={bar}
 	onpointerdown={grabBar}
 >
@@ -113,10 +128,13 @@
 		class="window"
 		style:left="{percent(shown.start)}%"
 		style:width="{percent(shown.end - shown.start)}%"
-		onpointerdown={grabStretch}
+		onpointerdown={(e) => grabStretch(e)}
 	></div>
 	{#each EDGES as edge (edge)}
-		<!-- Inside the stretch, from its start or up to its end, as the time range's are. -->
+		<!--
+			Inside the stretch, from its start or up to its end, as the time range's are:
+			side by side, meeting at its middle, where the stretch is narrower than both.
+		-->
 		<div
 			class="handle {edge}"
 			role="slider"
@@ -126,18 +144,38 @@
 			aria-valuemax={edge === 'start' ? shown.end - span : duration}
 			aria-valuenow={shown[edge]}
 			aria-valuetext={formatClipTime(shown[edge])}
-			style:--at="{percent(shown[edge])}%"
 			onkeydown={(e) => keydown(edge, e)}
 			onpointerdown={(e) => grabEdge(edge, e)}
 		></div>
 	{/each}
+	{#if zoomed}
+		<!--
+			Zoomed in, a tab hanging under the middle of the stretch moves it along the video,
+			however narrow it is: its handles may cover all of it.
+		-->
+		<div
+			class="tab"
+			role="slider"
+			tabindex="0"
+			aria-label="Move the zoom"
+			aria-valuemin={0}
+			aria-valuemax={latest}
+			aria-valuenow={shown.start}
+			aria-valuetext="{formatClipTime(shown.start)} to {formatClipTime(shown.end)}"
+			style:--middle="{percent((shown.start + shown.end) / 2)}%"
+			onkeydown={moveKeydown}
+			onpointerdown={(e) => grabStretch(e, true)}
+		></div>
+	{/if}
 </div>
 
 <style>
 	.zoom {
+		--tab-height: 0.75rem;
 		position: relative;
 		height: 1.25rem;
-		margin: 0 0.5rem;
+		/* Room below for the tab, which hangs from the bar while zoomed in: kept, so nothing shifts. */
+		margin: 0 0.5rem var(--tab-height);
 		border-radius: 6px;
 		/* An inset shadow, not a border: positions are percentages of the box the pointer maps to. */
 		box-shadow: inset 0 0 0 1px var(--border);
@@ -188,9 +226,10 @@
 
 	/*
 	 * Each end's handle stands inside the stretch, its outer edge where the stretch starts
-	 * or ends: at the bar's ends it is flush with them, in line with the time range's
-	 * thumbs above, and as wide. Where a short stretch brings them together, each still
-	 * stays on the bar.
+	 * or ends (`--from`, `--to`): at the bar's ends it is flush with them, in line with the
+	 * time range's thumbs above, and as wide. A stretch narrower than the two sets them
+	 * side by side, meeting at its middle, the start's first, kept on the bar — as the
+	 * time range's thumbs do.
 	 */
 	.handle {
 		--width: var(--timeline-thumb);
@@ -205,11 +244,19 @@
 	}
 
 	.handle.start {
-		left: min(var(--at), 100% - var(--width));
+		left: clamp(
+			0px,
+			min(var(--from), (var(--from) + var(--to)) / 2 - var(--width)),
+			100% - 2 * var(--width)
+		);
 	}
 
 	.handle.end {
-		left: max(var(--at) - var(--width), 0px);
+		left: clamp(
+			var(--width),
+			max(var(--to) - var(--width), (var(--from) + var(--to)) / 2),
+			100% - var(--width)
+		);
 	}
 
 	/* Fingers need more than the handle shows: a bigger, invisible grip around it. */
@@ -227,6 +274,47 @@
 		position: absolute;
 		inset: 32% 28%;
 		border-inline: 2px solid var(--surface);
+		opacity: 0.9;
+	}
+
+	/* The tab, as the time range's hangs from it: kept within the bar at either end. */
+	.tab {
+		--half: 1.1rem;
+		position: absolute;
+		top: 100%;
+		left: clamp(var(--half), var(--middle), calc(100% - var(--half)));
+		width: calc(2 * var(--half));
+		height: var(--tab-height);
+		margin-left: calc(-1 * var(--half));
+		border-radius: 0 0 5px 5px;
+		background: var(--muted);
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.tab:active {
+		cursor: grabbing;
+	}
+
+	/* Fingers: a grip reaching past the tab, mostly below it, where nothing else is. */
+	@media (pointer: coarse) {
+		.tab::before {
+			content: '';
+			position: absolute;
+			inset: 0 -0.5rem -0.6rem;
+		}
+	}
+
+	/* A grip: three short upright lines in the middle, as on the range's tab. */
+	.tab::after {
+		content: '';
+		position: absolute;
+		top: 22%;
+		bottom: 28%;
+		left: 50%;
+		width: 12px;
+		margin-left: -6px;
+		background: repeating-linear-gradient(to right, var(--surface) 0 2px, transparent 2px 5px);
 		opacity: 0.9;
 	}
 </style>
