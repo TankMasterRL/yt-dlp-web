@@ -220,6 +220,44 @@ describe('Library', () => {
 		});
 	});
 
+	// The library page loads the library each time it opens: often while a
+	// download started on the download page is still running in this tab.
+	it('follows a download running here to its end through a load', async () => {
+		const { library, downloader } = setup();
+		await library.add(video, format);
+		downloader.report('id1', { bytesDone: 10, bytesTotal: 40 });
+		await library.load();
+		expect(library.items[0].status).toBe('downloading');
+		downloader.report('id1', { bytesDone: 30, bytesTotal: 40 });
+		expect(library.live.id1).toEqual({ bytesDone: 30, bytesTotal: 40 });
+
+		downloader.finish('id1', 40);
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'complete', bytesDone: 40, bytesTotal: 40 });
+		expect(library.live.id1).toBeUndefined();
+	});
+
+	it('ends a download complete when the library loads while its end is being saved', async () => {
+		const db = memoryDb();
+		const put = db.put;
+		let release!: () => void;
+		const saving = new Promise<void>((resolve) => (release = resolve));
+		db.put = async (item) => {
+			if (item.status === 'complete') await saving;
+			return put(item);
+		};
+		const { library, downloader } = setup({ db });
+		await library.add(video, format);
+		downloader.finish('id1', 40);
+		await flush();
+		// The record still says "downloading", and the worker has let go of its lock.
+		await library.load();
+		release();
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'complete', bytesDone: 40 });
+		expect((await db.get('id1'))?.status).toBe('complete');
+	});
+
 	it('hands out the stored file for playback or export', async () => {
 		const { library, downloader } = setup();
 		await library.add(video, format);
@@ -318,6 +356,17 @@ describe('imports from this device', () => {
 		// Nothing was fetched: no relay is asked for anything.
 		expect(downloader.start).not.toHaveBeenCalled();
 		expect(deps.fetchThumbnail).not.toHaveBeenCalled();
+	});
+
+	it('follows a copy running here to its end through a load', async () => {
+		const { library, downloader } = setup();
+		await library.importFile(picked());
+		downloader.report('id1', { bytesDone: 1024, bytesTotal: 4096 });
+		await library.load();
+		expect(library.items[0].status).toBe('importing');
+		downloader.finish('id1', 4096);
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'complete', bytesDone: 4096 });
 	});
 
 	it('refuses a file the browser cannot play, and adds nothing', async () => {
@@ -477,6 +526,21 @@ describe('merged downloads', () => {
 		expect(library.items[0]).toMatchObject({ status: 'complete', bytesTotal: 48, bytesDone: 48 });
 		expect(deps.files.remove).toHaveBeenCalledWith('id1.video.webm');
 		expect(deps.files.remove).toHaveBeenCalledWith('id1.audio.webm');
+	});
+
+	it('follows a merged download running here through a load, merge and all', async () => {
+		const mux = remuxer();
+		const { library, downloader } = setup({ remuxer: mux.r });
+		await library.addMerged(video, pair);
+		downloader.finish('id1', 30);
+		await flush();
+		await library.load();
+		downloader.finish('id1', 20);
+		await flush();
+		expect(library.items[0].status).toBe('merging');
+		mux.finish(48);
+		await flush();
+		expect(library.items[0]).toMatchObject({ status: 'complete', bytesTotal: 48 });
 	});
 
 	it('has FFmpeg loading while the parts download, and lets it go once merged', async () => {
