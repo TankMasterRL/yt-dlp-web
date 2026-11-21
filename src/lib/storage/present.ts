@@ -57,6 +57,24 @@ export function libraryBytes(
 	}, 0);
 }
 
+/**
+ * The quota Brave reports to every site, on every platform, whatever the site
+ * stores and whatever Brave would let it store (brave-core#6622, so that the
+ * figure cannot tell sites or private windows apart). Its `usage` is real.
+ */
+export const BRAVE_QUOTA = 2 ** 31;
+
+/**
+ * How much more the browser says this site may store, from its estimate — or
+ * null where the estimate says nothing of it: no quota, Brave's fixed one, or
+ * one the site has already gone past, which cannot be a limit it is held to.
+ * (Chromium's is usage + 10 GiB by design, so there it is always 10 GiB.)
+ */
+export function storageRoom({ usage = 0, quota = 0 }: StorageEstimate): number | null {
+	if (!quota || quota === BRAVE_QUOTA || usage > quota) return null;
+	return quota - usage;
+}
+
 /** An item's status in words; a finished import was imported, not downloaded. */
 export function statusLabel(status: ItemStatus, origin?: LibraryItem['origin']): string {
 	return status === 'complete' && origin === 'import' ? 'Imported' : STATUS[status];

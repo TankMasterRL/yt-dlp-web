@@ -136,7 +136,10 @@ plays files from `blob:` URLs, saves them with `showSaveFilePicker()` (or a plai
 shows how much storage it uses: the bytes of its own items (each file as far as written, live while
 it runs, and its thumbnail), counted from the library itself (`libraryBytes`). The browser's
 `navigator.storage.estimate()` covers the whole origin — every app served from the same address,
-such as `localhost` or a `github.io` account — so it only says how much more fits.
+such as `localhost` or a `github.io` account — so it only says how much more fits, and only where
+its quota can be a limit (`storageRoom`). Brave reports the same 2 GiB quota to every site beside
+the real usage, and Chromium reports usage + 10 GiB, both by design; in Brave the page names no
+room at all, rather than "0 B" once the library passes 2 GiB.
 
 ### Importing from the device
 
