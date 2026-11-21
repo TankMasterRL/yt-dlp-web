@@ -133,7 +133,9 @@ export class Library {
 				await this.#deps.db.put(item);
 			}
 		}
-		this.items = items;
+		// The library page loads each time it opens, often while a download started
+		// from the download page still runs here.
+		this.items = this.#keepRunning(items);
 		this.loaded = true;
 	}
 
@@ -304,10 +306,14 @@ export class Library {
 				item.status = 'failed';
 				item.error = (e as Error).message;
 			}
+		}
+		// Still running here until its end is stored: a load meanwhile would read the
+		// record from before, and take this item's place with it.
+		try {
+			if (this.#find(id)) await this.#save(item);
 		} finally {
 			delete this.live[id];
 		}
-		if (this.#find(id)) await this.#save(item);
 	}
 
 	async #download(item: DownloadedItem): Promise<number> {
@@ -384,9 +390,16 @@ export class Library {
 	}
 
 	async #refresh(): Promise<void> {
-		const items = await this.#deps.db.all();
-		// Downloads running here are the source of truth for their own state.
-		this.items = items.map((i) => (i.id in this.live ? (this.#find(i.id) ?? i) : i));
+		this.items = this.#keepRunning(await this.#deps.db.all());
+	}
+
+	/**
+	 * Stored records, except for what runs in this tab: its run updates the item
+	 * it started with, which is the source of truth for its own state — a record
+	 * in its place would never hear of its progress or its end.
+	 */
+	#keepRunning(stored: LibraryItem[]): LibraryItem[] {
+		return stored.map((i) => (i.id in this.live ? (this.#find(i.id) ?? i) : i));
 	}
 
 	#find(id: string): LibraryItem | undefined {
