@@ -12,6 +12,7 @@
 		progressLabel,
 		statusLabel
 	} from '#lib/storage/present.ts';
+	import { quotaReporter, storageRoom } from '#lib/storage/quota.ts';
 	import AnimationDialog from '#lib/ui/AnimationDialog.svelte';
 	import PlayerDialog from '#lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '#lib/ui/save.ts';
@@ -26,7 +27,7 @@
 	type Sort = 'newest' | 'oldest' | 'title' | 'size';
 	let query = $state('');
 	let sort = $state<Sort>('newest');
-	/** How much more the browser lets this site store; null where it won't say. */
+	/** How much more the browser lets this site store; null where it won't say (`storageRoom`). */
 	let room = $state<number | null>(null);
 	let persisted = $state<boolean | null>(null);
 	let playing = $state<{ item: LibraryItem; file: File } | null>(null);
@@ -75,14 +76,13 @@
 
 	/**
 	 * The browser's estimate covers the whole origin — anything else served from the same
-	 * address (localhost, a github.io account) — so it only says how much more fits; what
-	 * the library holds is counted from the library itself.
+	 * address (localhost, a github.io account) — so it only says how much more fits, where
+	 * it says that at all; what the library holds is counted from the library itself.
 	 */
 	async function refreshStorage() {
 		// Some engines and private windows offer no storage manager at all.
 		if (!navigator.storage) return;
-		const { usage = 0, quota = 0 } = await navigator.storage.estimate();
-		room = quota ? Math.max(0, quota - usage) : null;
+		room = storageRoom(await navigator.storage.estimate(), quotaReporter(navigator));
 		persisted = await navigator.storage.persisted();
 	}
 
