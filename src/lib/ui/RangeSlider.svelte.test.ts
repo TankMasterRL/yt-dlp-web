@@ -138,14 +138,16 @@ describe('RangeSlider', () => {
 		await fireEvent.pointerUp(window, { pointerId: 1 });
 	});
 
-	it('stands each end on the range, inside it, where its time is', () => {
-		const { props, start, end } = setup();
-		expect(start.style.getPropertyValue('--at')).toBe('20%');
-		expect(end.style.getPropertyValue('--at')).toBe('50%');
+	it('tells its thumbs where the range starts and ends, and pairs them while both show', () => {
+		const { props, track } = setup();
+		expect(track.style.getPropertyValue('--from')).toBe('20%');
+		expect(track.style.getPropertyValue('--to')).toBe('50%');
+		// Both on the track: a range narrower than the two sets them side by side.
+		expect(track).toHaveClass('paired');
 		props.range = { start: 0, end: 10 };
 		flushSync();
-		expect(start.style.getPropertyValue('--at')).toBe('0%');
-		expect(end.style.getPropertyValue('--at')).toBe('100%');
+		expect(track.style.getPropertyValue('--from')).toBe('0%');
+		expect(track.style.getPropertyValue('--to')).toBe('100%');
 	});
 
 	it('drags the whole selection, keeping its length', async () => {
@@ -318,8 +320,9 @@ describe('RangeSlider, zoomed in', () => {
 
 	it('shows the stretch it is zoomed in on across the whole track', () => {
 		const { start, end, tab, track } = zoomed({ start: 2.5, end: 3 });
-		expect(start.style.getPropertyValue('--at')).toBe('25%');
-		expect(end.style.getPropertyValue('--at')).toBe('50%');
+		expect(track.style.getPropertyValue('--from')).toBe('25%');
+		expect(track.style.getPropertyValue('--to')).toBe('50%');
+		expect(track).toHaveClass('paired');
 		expect(selection(track).style.left).toBe('25%');
 		expect(selection(track).style.width).toBe('25%');
 		expect(tab.style.getPropertyValue('--middle')).toBe('37.5%');
@@ -352,7 +355,9 @@ describe('RangeSlider, zoomed in', () => {
 		const { props, start, end, tab, track } = zoomed({ start: 1, end: 3 });
 		expect(start).toHaveClass('outside');
 		// Kept on the track, where focus would not scroll the dialog sideways to it.
-		expect(start.style.getPropertyValue('--at')).toBe('0%');
+		expect(track.style.getPropertyValue('--from')).toBe('0%');
+		// One end alone shows: it makes no room for the other.
+		expect(track).not.toHaveClass('paired');
 		expect(end).not.toHaveClass('outside');
 		expect(selection(track).style.left).toBe('0%');
 		expect(selection(track).style.width).toBe('50%');
@@ -363,7 +368,7 @@ describe('RangeSlider, zoomed in', () => {
 		flushSync();
 		expect(start).toHaveClass('outside');
 		expect(end).toHaveClass('outside');
-		expect(end.style.getPropertyValue('--at')).toBe('100%');
+		expect(track.style.getPropertyValue('--to')).toBe('100%');
 		expect(tab).toHaveClass('outside');
 		expect(selection(track).style.width).toBe('0%');
 	});
@@ -394,6 +399,26 @@ describe('RangeSlider, zoomed in', () => {
 		// Within it, it stays put.
 		await fireEvent.keyDown(end, { key: 'ArrowLeft' });
 		expect(props.view).toEqual({ start: 8, end: 10 });
+	});
+
+	it('brings an end the keyboard moves out of it back with room for its thumb, on its side of its time', async () => {
+		// 100 px a second, and thumbs 10 px wide: a tenth of a second of the track.
+		const { props, start, end } = zoomed({ start: 3.85, end: 5 });
+		for (const thumb of [start, end])
+			vi.spyOn(thumb, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 10, 54));
+		// Still inside, but its thumb, from 3.95 on, would run past 4.
+		await fireEvent.keyDown(start, { key: 'ArrowRight' });
+		expect(props.range.start).toBe(3.95);
+		expect(props.view).toEqual({ start: 2.05, end: 4.05 });
+		// Focus from the keyboard does the same for an end whose thumb would run past the track.
+		props.view = { start: 2.1, end: 4.1 };
+		props.range = { start: 1, end: 2.15 };
+		flushSync();
+		end.focus();
+		expect(props.view).toEqual({ start: 2.05, end: 4.05 });
+		await fireEvent.keyDown(end, { key: 'ArrowLeft' });
+		expect(props.range.end).toBe(2.05);
+		expect(props.view).toEqual({ start: 1.95, end: 3.95 });
 	});
 
 	it('follows the range its tab moves from the keyboard: its start shown, and its end if it fits', async () => {
@@ -454,6 +479,18 @@ describe("RangeSlider's frame marks", () => {
 		resizeAll(1600, 44);
 		flushSync();
 		expect(marks(track)).toHaveAttribute('data-frames', '30');
+	});
+
+	it("are drawn over the thumbs, where the range's first and last frames are", () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const { track, start, end } = setup({ start: 2, end: 5 }, 10, false, { fps: 10 });
+		resizeAll(800, 44);
+		flushSync();
+		const ticks = marks(track)!;
+		// In a layer of their own after both thumbs, which stacks over them.
+		expect(ticks.parentElement).toHaveClass('over');
+		for (const thumb of [start, end])
+			expect(thumb.compareDocumentPosition(ticks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
 	it('stand apart once the timeline is zoomed in far enough', async () => {
