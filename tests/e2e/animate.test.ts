@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Download, Locator, Page } from '@playwright/test';
-import { decodeApng } from '../helpers/apng';
+import { decodeApng, decodePng } from '../helpers/apng';
 import { loadFFmpegCore } from '../helpers/ffmpeg';
 import { decodeGif } from '../helpers/gif';
 import { readAvif } from '../helpers/isobmff';
@@ -512,6 +512,17 @@ const center = async (locator: Locator) => {
 	return x + width / 2;
 };
 
+/**
+ * Where on its track the time range, or the stretch the zoom shows, starts and
+ * ends: each end's thumb stands inside, the start's from where it starts, the
+ * end's up to where it ends.
+ */
+const startsAt = async (start: Locator) => (await start.boundingBox())!.x;
+const endsAt = async (end: Locator) => {
+	const { x, width } = (await end.boundingBox())!;
+	return x + width;
+};
+
 /** Drags `handle` across to `x`, from its middle. */
 async function dragTo(page: Page, handle: Locator, x: number) {
 	const box = (await handle.boundingBox())!;
@@ -520,6 +531,21 @@ async function dragTo(page: Page, handle: Locator, x: number) {
 	await page.mouse.down();
 	await page.mouse.move(x, y, { steps: 8 });
 	await page.mouse.up();
+}
+
+/** Drags `handle` `dx` pixels along, from its middle. */
+async function dragBy(page: Page, handle: Locator, dx: number) {
+	await dragTo(page, handle, (await center(handle)) + dx);
+}
+
+/** Drags a start's thumb, from its middle, until where it starts is at `x`. */
+async function dragStartTo(page: Page, start: Locator, x: number) {
+	await dragBy(page, start, x - (await startsAt(start)));
+}
+
+/** Drags an end's thumb, from its middle, until where it ends is at `x`. */
+async function dragEndTo(page: Page, end: Locator, x: number) {
+	await dragBy(page, end, x - (await endsAt(end)));
 }
 
 test.describe('the frame timeline', () => {
@@ -552,8 +578,8 @@ test.describe('the frame timeline', () => {
 			await expect(summary).toContainText(`· ${frames} frames`);
 			await expect(marks).toHaveAttribute('data-frames', String(frames));
 			const { x, width } = (await marks.boundingBox())!;
-			expect(Math.abs(x - (await center(start)))).toBeLessThanOrEqual(1);
-			expect(Math.abs(x + width - (await center(end)))).toBeLessThanOrEqual(1);
+			expect(Math.abs(x - (await startsAt(start)))).toBeLessThanOrEqual(1);
+			expect(Math.abs(x + width - (await endsAt(end)))).toBeLessThanOrEqual(1);
 		};
 		await expect(dialog.getByLabel('Frame rate')).toHaveValue('12');
 		// The clip's own rate, learned in a video of its own while the editor was already open.
@@ -607,8 +633,8 @@ test.describe('the frame timeline', () => {
 		// The range's start is well inside that, its end (1.5 s) beyond it.
 		const bar = (await zoom.boundingBox())!;
 		const barPixel = 2 / bar.width;
-		await dragTo(page, zoomTo, bar.x + bar.width * 0.625);
-		await dragTo(page, zoomFrom, bar.x + bar.width * 0.125);
+		await dragEndTo(page, zoomTo, bar.x + bar.width * 0.625);
+		await dragStartTo(page, zoomFrom, bar.x + bar.width * 0.125);
 		const [from, to] = [await value(zoomFrom), await value(zoomTo)];
 		expect(Math.abs(from - 0.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
 		expect(Math.abs(to - 1.25)).toBeLessThanOrEqual(2 * barPixel + 0.001);
@@ -620,11 +646,11 @@ test.describe('the frame timeline', () => {
 		// The range's start stands where its time is in the stretch; its end, outside, is hidden.
 		const box = (await track.boundingBox())!;
 		const at = (time: number) => box.x + ((time - from) / (to - from)) * box.width;
-		expect(Math.abs((await center(start)) - at(0.5))).toBeLessThanOrEqual(1.5);
+		expect(Math.abs((await startsAt(start)) - at(0.5))).toBeLessThanOrEqual(1.5);
 		await expect(end).toHaveClass(/outside/);
 
 		// A tenth of the track is now a tenth of a second, not a fifth: finer by the zoom.
-		await dragTo(page, start, at(0.5) + box.width / 10);
+		await dragBy(page, start, box.width / 10);
 		const pixel = (to - from) / box.width;
 		expect(Math.abs((await value(start)) - (0.5 + (to - from) / 10))).toBeLessThanOrEqual(
 			2 * pixel + 0.001
@@ -696,6 +722,94 @@ test.describe('the time range', () => {
 		await expect(end).toHaveAttribute('aria-valuenow', String(pictureStart(1) + 0.5));
 
 		expect(await violations()).toEqual([]);
+	});
+
+	test("keeps its ends on the track, flush with it at the clip's ends and in line with the zoom's", async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		await page.goto('/library/');
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		const track = dialog.getByRole('group', { name: 'Time range' });
+		const start = dialog.getByRole('slider', { name: 'Start' });
+		const end = dialog.getByRole('slider', { name: 'End' });
+		const zoom = dialog.getByRole('group', { name: 'Timeline zoom' });
+		const zoomFrom = dialog.getByRole('slider', { name: 'Zoom from' });
+		const zoomTo = dialog.getByRole('slider', { name: 'Zoom to' });
+		const value = async (slider: Locator) => Number(await slider.getAttribute('aria-valuenow'));
+		await expect(end).toHaveAttribute('aria-valuemax', '2', { timeout: 15_000 });
+		const box = (await track.boundingBox())!;
+		const [left, right] = [box.x, box.x + box.width];
+		const expectOnTrack = async () => {
+			expect(await startsAt(start)).toBeGreaterThanOrEqual(left - 0.5);
+			expect(await endsAt(end)).toBeLessThanOrEqual(right + 0.5);
+			// Each where its time is.
+			const at = (time: number) => left + (time / 2) * box.width;
+			expect(Math.abs((await startsAt(start)) - at(await value(start)))).toBeLessThanOrEqual(1);
+			expect(Math.abs((await endsAt(end)) - at(await value(end)))).toBeLessThanOrEqual(1);
+		};
+
+		// The whole 2 s clip to begin with: from the track's start to its end, and no further.
+		await expect(start).toHaveAttribute('aria-valuenow', '0');
+		await expect(end).toHaveAttribute('aria-valuenow', '2');
+		await expectOnTrack();
+		// The zoom under it shows the whole clip: its ends' thumbs in line with the range's, edge
+		// for edge — as wide as them.
+		await expect(zoomFrom).toHaveAttribute('aria-valuenow', '0');
+		await expect(zoomTo).toHaveAttribute('aria-valuenow', '2');
+		expect(Math.abs((await startsAt(zoomFrom)) - left)).toBeLessThanOrEqual(0.5);
+		expect(Math.abs((await endsAt(zoomTo)) - right)).toBeLessThanOrEqual(0.5);
+		expect(Math.abs((await endsAt(zoomFrom)) - (await endsAt(start)))).toBeLessThanOrEqual(0.5);
+		expect(Math.abs((await startsAt(zoomTo)) - (await startsAt(end)))).toBeLessThanOrEqual(0.5);
+		// Nothing is drawn past either end of the track or the zoom — not their ends, not the
+		// preview's mark at 0:00: just beside them, from above the range's thumbs to below the
+		// zoom's, the dialog's own background alone.
+		await expect(track.locator('.playhead')).toHaveCount(1);
+		// Before each screenshot, Playwright's WebKit appends a `<style>body {}</style>` to the
+		// page to sync its animations (WKPage's shouldToggleStyleSheetToSyncAnimations), and the
+		// page's CSP refuses it: a style-src-elem violation with no source file. So the page's
+		// own violations are read first, and after the screenshots only those may follow.
+		expect(await violations()).toEqual([]);
+		const zoomBox = (await zoom.boundingBox())!;
+		const besides = [Math.floor(left) - 4, Math.ceil(right)];
+		for (const x of besides) {
+			const clip = {
+				x,
+				y: box.y - 6,
+				width: 4,
+				height: zoomBox.y + zoomBox.height + 6 - (box.y - 6)
+			};
+			const { width, pixels } = decodePng(await page.screenshot({ clip }));
+			const color = (i: number) => pixels.subarray(i * 4, i * 4 + 4).join();
+			const drawn = [];
+			for (let i = 0; i < pixels.length / 4; i++) {
+				if (color(i) !== color(0))
+					drawn.push(`(${i % width}, ${Math.floor(i / width)}) ${color(i)}`);
+			}
+			expect(drawn, `beside the track and the zoom at x = ${x}, on ${color(0)}`).toEqual([]);
+		}
+
+		// Dragged from their middles, the ends move as far as the pointer does: a quarter of the
+		// track, half a second, to two screen pixels' worth.
+		await dragBy(page, start, box.width / 4);
+		await dragBy(page, end, -box.width / 4);
+		const pixel = 2 / box.width;
+		expect(Math.abs((await value(start)) - 0.5)).toBeLessThanOrEqual(2 * pixel + 0.001);
+		expect(Math.abs((await value(end)) - 1.5)).toBeLessThanOrEqual(2 * pixel + 0.001);
+		await expectOnTrack();
+
+		// Dragged out past the track's ends, they stop at the clip's, still on the track.
+		await dragTo(page, start, left - 6);
+		await dragTo(page, end, right + 6);
+		await expect(start).toHaveAttribute('aria-valuenow', '0');
+		await expect(end).toHaveAttribute('aria-valuenow', '2');
+		await expectOnTrack();
+
+		const screenshotStyle = 'style-src-elem: inline @ ';
+		const seen = await violations();
+		expect(seen.filter((violation) => violation !== screenshotStyle)).toEqual([]);
+		expect(seen.length).toBeLessThanOrEqual(besides.length);
 	});
 
 	test("steps a picture at a time with the arrow keys, once it knows the clip's rate", async ({

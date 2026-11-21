@@ -13,6 +13,8 @@
 	--danger: #b3261e;
 	--focus: #1a5fd6;
 	--radius: 10px;
+	/* The animation maker's timeline: its two rows' end thumbs, one width so they line up. */
+	--timeline-thumb: 0.9rem;
 	--mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 	font-family:
 		system-ui,

@@ -121,11 +121,17 @@
 		reveal(range[edge]);
 	}
 
+	/**
+	 * An end's thumb: moves the end as far as the pointer moves. The thumb stands beside
+	 * its time, not on it, so taking the time under the pointer would make it jump.
+	 */
 	function grabEdge(edge: Edge, event: PointerEvent) {
 		if (disabled || event.button !== 0) return;
 		event.stopPropagation();
 		focusPressed(event.currentTarget as HTMLElement);
-		followPointer(event, (e) => setEdge(edge, timeAt(e.clientX)));
+		const from = range[edge];
+		const origin = timeAt(event.clientX);
+		followPointer(event, (e) => setEdge(edge, from + timeAt(e.clientX) - origin));
 	}
 
 	/** The whole range shifted by `delta` seconds, its length kept; its first frame shown. */
@@ -204,10 +210,16 @@
 		onpointerdown={(e) => grabRange(e)}
 	></div>
 	{#if playhead !== null && showing(playhead)}
-		<div class="playhead" style:left="{percent(playhead)}%" aria-hidden="true"></div>
+		<!-- Over the range, clipped to the track's corners: at either end, none of it hangs past. -->
+		<div class="layers" aria-hidden="true">
+			<div class="playhead" style:left="{percent(playhead)}%"></div>
+		</div>
 	{/if}
 	{#each EDGES as edge (edge)}
-		<!-- Out of view, still there for the keyboard, which brings it into view. -->
+		<!--
+			Inside the range, from its start or up to its end: never past the track's ends.
+			Out of view, still there for the keyboard, which brings it into view.
+		-->
 		<div
 			class="thumb {edge}"
 			class:outside={!showing(range[edge])}
@@ -219,7 +231,7 @@
 			aria-valuenow={range[edge]}
 			aria-valuetext={formatClipTime(range[edge])}
 			aria-disabled={disabled}
-			style:left="{onTrack(range[edge])}%"
+			style:--at="{onTrack(range[edge])}%"
 			onfocus={() => focused(range[edge])}
 			onkeydown={(e) => keydown(edge, e)}
 			onpointerdown={(e) => grabEdge(edge, e)}
@@ -323,7 +335,6 @@
 		margin-left: -1px;
 		background: var(--text);
 		opacity: 0.7;
-		pointer-events: none;
 	}
 
 	.pictured .playhead {
@@ -332,18 +343,31 @@
 		opacity: 0.9;
 	}
 
+	/*
+	 * Each end's thumb stands inside the range, its outer edge where the range starts or
+	 * ends: at the track's ends it is flush with them, never hanging past. Where a short
+	 * range brings them together, each still stays on the track.
+	 */
 	.thumb {
+		--width: var(--timeline-thumb);
 		position: absolute;
 		top: -0.3rem;
 		bottom: -0.3rem;
-		width: 0.9rem;
-		margin-left: -0.45rem;
+		width: var(--width);
 		border-radius: 4px;
 		background: var(--accent);
 		cursor: ew-resize;
 		touch-action: none;
 		/* Over the tab where a short range brings them together: the edges stay in reach. */
 		z-index: 1;
+	}
+
+	.thumb.start {
+		left: min(var(--at), 100% - var(--width));
+	}
+
+	.thumb.end {
+		left: max(var(--at) - var(--width), 0px);
 	}
 
 	/* Fingers need more than the thumb shows: a wider, invisible grip around it. */

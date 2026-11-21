@@ -48,11 +48,17 @@
 		setEdge(edge, target);
 	}
 
+	/**
+	 * An end's handle: moves the end as far as the pointer moves. The handle stands beside
+	 * its time, not on it, so taking the time under the pointer would make it jump.
+	 */
 	function grabEdge(edge: Edge, event: PointerEvent) {
 		if (event.button !== 0) return;
 		event.stopPropagation();
 		(event.currentTarget as HTMLElement).focus();
-		followPointer(event, (e) => setEdge(edge, timeAt(e.clientX)));
+		const from = shown[edge];
+		const origin = timeAt(event.clientX);
+		followPointer(event, (e) => setEdge(edge, from + timeAt(e.clientX) - origin));
 	}
 
 	/**
@@ -110,6 +116,7 @@
 		onpointerdown={grabStretch}
 	></div>
 	{#each EDGES as edge (edge)}
+		<!-- Inside the stretch, from its start or up to its end, as the time range's are. -->
 		<div
 			class="handle {edge}"
 			role="slider"
@@ -119,7 +126,7 @@
 			aria-valuemax={edge === 'start' ? shown.end - span : duration}
 			aria-valuenow={shown[edge]}
 			aria-valuetext={formatClipTime(shown[edge])}
-			style:left="{percent(shown[edge])}%"
+			style:--at="{percent(shown[edge])}%"
 			onkeydown={(e) => keydown(edge, e)}
 			onpointerdown={(e) => grabEdge(edge, e)}
 		></div>
@@ -179,16 +186,30 @@
 		cursor: grabbing;
 	}
 
+	/*
+	 * Each end's handle stands inside the stretch, its outer edge where the stretch starts
+	 * or ends: at the bar's ends it is flush with them, in line with the time range's
+	 * thumbs above, and as wide. Where a short stretch brings them together, each still
+	 * stays on the bar.
+	 */
 	.handle {
+		--width: var(--timeline-thumb);
 		position: absolute;
 		top: -0.2rem;
 		bottom: -0.2rem;
-		width: 0.75rem;
-		margin-left: -0.375rem;
+		width: var(--width);
 		border-radius: 3px;
 		background: var(--muted);
 		cursor: ew-resize;
 		touch-action: none;
+	}
+
+	.handle.start {
+		left: min(var(--at), 100% - var(--width));
+	}
+
+	.handle.end {
+		left: max(var(--at) - var(--width), 0px);
 	}
 
 	/* Fingers need more than the handle shows: a bigger, invisible grip around it. */
