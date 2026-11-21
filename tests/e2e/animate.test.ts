@@ -766,8 +766,14 @@ test.describe('the time range', () => {
 		// preview's mark at 0:00: just beside them, from above the range's thumbs to below the
 		// zoom's, the dialog's own background alone.
 		await expect(track.locator('.playhead')).toHaveCount(1);
+		// Before each screenshot, Playwright's WebKit appends a `<style>body {}</style>` to the
+		// page to sync its animations (WKPage's shouldToggleStyleSheetToSyncAnimations), and the
+		// page's CSP refuses it: a style-src-elem violation with no source file. So the page's
+		// own violations are read first, and after the screenshots only those may follow.
+		expect(await violations()).toEqual([]);
 		const zoomBox = (await zoom.boundingBox())!;
-		for (const x of [Math.floor(left) - 4, Math.ceil(right)]) {
+		const besides = [Math.floor(left) - 4, Math.ceil(right)];
+		for (const x of besides) {
 			const clip = {
 				x,
 				y: box.y - 6,
@@ -800,7 +806,10 @@ test.describe('the time range', () => {
 		await expect(end).toHaveAttribute('aria-valuenow', '2');
 		await expectOnTrack();
 
-		expect(await violations()).toEqual([]);
+		const screenshotStyle = 'style-src-elem: inline @ ';
+		const seen = await violations();
+		expect(seen.filter((violation) => violation !== screenshotStyle)).toEqual([]);
+		expect(seen.length).toBeLessThanOrEqual(besides.length);
 	});
 
 	test("steps a picture at a time with the arrow keys, once it knows the clip's rate", async ({
