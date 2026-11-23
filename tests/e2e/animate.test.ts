@@ -8,9 +8,17 @@ import { decodeJxl } from '../helpers/jxl';
 import { oracle } from '../helpers/oracle';
 import { readAnimatedWebp, stillWebp } from '../helpers/webp';
 import { expect, test } from './fixtures';
-import { ENGINE_BOOT_MS, EXTRACTION_MS, NO_OPFS, engineReady, hasOpfs, probe } from './app';
+import {
+	ENGINE_BOOT_MS,
+	EXTRACTION_MS,
+	NO_OPFS,
+	engineReady,
+	hasOpfs,
+	opfsFiles,
+	probe
+} from './app';
 import { ownViolations, recordConsoleCsp, recordCspViolations } from './csp';
-import { FIXTURE_PATH, pickFiles } from './device';
+import { FIXTURE_PATH, pickFiles, withoutSavePicker } from './device';
 
 const FIXTURE = new Uint8Array(
 	readFileSync(new URL('../fixtures/media/bbf-360.webm', import.meta.url))
@@ -589,6 +597,135 @@ async function dragStartTo(page: Page, start: Locator, x: number) {
 async function dragEndTo(page: Page, end: Locator, x: number) {
 	await dragBy(page, end, x - (await endsAt(end)));
 }
+
+test.describe('the animations made in this tab', () => {
+	test.describe.configure({ timeout: 240_000 });
+
+	test('are kept to view again, step through, save and remove, until the page is reloaded', async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		const consoleCsp = recordConsoleCsp(page);
+		await withoutSavePicker(page);
+		// Straight from disk: no engine, no private storage, in every browser.
+		await page.goto('/library/');
+		const shelf = page.getByRole('region', { name: 'Animations' });
+		await expect(page.getByRole('button', { name: 'Animate a video file…' })).toBeVisible();
+		await expect(shelf).toHaveCount(0);
+		await pickFiles(page, 'Animate a video file…', [FIXTURE_PATH]);
+		const dialog = page.getByRole('dialog', { name: 'Make an animated image' });
+		await expect(dialog.getByRole('slider', { name: 'End' })).toHaveAttribute(
+			'aria-valuemax',
+			'2',
+			{ timeout: 15_000 }
+		);
+
+		/** Makes the animation the editor is set to, and checks what the dialog says of it. */
+		const make = async (label: string, made: string) => {
+			await dialog.getByRole('button', { name: `Create ${label}` }).click();
+			const result = dialog.getByRole('region', { name: `Your ${label}` });
+			const failure = dialog.getByRole('alert');
+			await expect(result.or(failure)).toBeVisible({ timeout: 90_000 });
+			expect(await failure.allTextContents(), `making the ${label}`).toEqual([]);
+			await expect(result).toContainText(made);
+			// Where it is kept, and for how long.
+			await expect(result).toContainText(
+				'Also kept under Animations on the library page until this tab is reloaded or closed'
+			);
+		};
+		// The whole clip (24 pictures at its own 12 fps): a GIF, then an APNG half as wide.
+		await make('GIF', '480 × 270 px · 24 frames · 2.0 s');
+		await dialog.getByLabel('Format').selectOption({ label: 'APNG' });
+		await dialog.getByLabel('Width').selectOption({ label: '240 px' });
+		await make('APNG', '240 × 135 px · 24 frames · 2.0 s');
+		await dialog.getByRole('button', { name: 'Close the animation maker' }).click();
+
+		// Both are on the library page, newest first, each the animation itself, playing.
+		const gif = 'GIF of bbf-360, 0:00.0 to 0:02.0';
+		const apng = 'APNG of bbf-360, 0:00.0 to 0:02.0';
+		const cards = shelf
+			.getByRole('list', { name: 'Animations made in this tab' })
+			.getByRole('listitem');
+		await expect(cards).toHaveCount(2);
+		await expect(shelf).toContainText('2 animations ·');
+		await expect(cards.nth(0).getByRole('figure')).toHaveAttribute('aria-label', apng);
+		await expect(cards.nth(1).getByRole('figure')).toHaveAttribute('aria-label', gif);
+		await expect(cards.nth(0)).toContainText('240 × 135 px');
+		await expect(cards.nth(1)).toContainText('480 × 270 px');
+		const shownWidth = (image: Locator) =>
+			expect.poll(() =>
+				image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)
+			);
+		await shownWidth(cards.nth(0).locator('img')).toBe(240);
+		await shownWidth(cards.nth(1).locator('img')).toBe(480);
+
+		// Viewed large, at its own size, and the others a step away (round from the last).
+		await page.getByRole('button', { name: `View ${gif}` }).click();
+		const viewer = page.getByRole('dialog', { name: 'bbf-360' });
+		const image = viewer.getByRole('img');
+		await expect(viewer).toContainText('GIF of 0:00.0 to 0:02.0 of the video');
+		await expect(viewer).toContainText('2 of 2');
+		await shownWidth(image).toBe(480);
+		expect((await image.boundingBox())!.width).toBeCloseTo(480, 0);
+		await viewer.getByRole('button', { name: 'Next animation' }).click();
+		await expect(viewer).toContainText('APNG of 0:00.0 to 0:02.0 of the video');
+		await expect(viewer).toContainText('1 of 2');
+		await shownWidth(image).toBe(240);
+		await page.keyboard.press('ArrowLeft');
+		await expect(viewer).toContainText('2 of 2');
+		await page.keyboard.press('ArrowRight');
+		await expect(viewer).toContainText('1 of 2');
+
+		// Saved from the viewer, it is the APNG that was made (WebKit saves spaces as "_").
+		const [savedApng]: [Download, void] = await Promise.all([
+			page.waitForEvent('download'),
+			viewer.getByRole('button', { name: 'Save APNG' }).click()
+		]);
+		expect(savedApng.suggestedFilename()).toMatch(/^bbf-360[ _]\(0\.0s-2\.0s\)\.png$/);
+		const decoded = decodeApng(
+			new Uint8Array(
+				readFileSync((await probe('wait for the saved APNG', () => savedApng.path()))!)
+			)
+		);
+		expect(decoded).toMatchObject({ width: 240, height: 135, plays: 0 });
+		expect(decoded.frames).toHaveLength(24);
+
+		// Removed, it is gone, and the viewer shows the one left.
+		await viewer.getByRole('button', { name: 'Remove' }).click();
+		await expect(viewer).toContainText('GIF of 0:00.0 to 0:02.0 of the video');
+		await expect(viewer.getByRole('button', { name: 'Next animation' })).toHaveCount(0);
+		await viewer.getByRole('button', { name: 'Close the animation viewer' }).click();
+		await expect(viewer).toHaveCount(0);
+		await expect(cards).toHaveCount(1);
+		await expect(shelf).toContainText('1 animation ·');
+
+		// It saves from its card too.
+		const [savedGif]: [Download, void] = await Promise.all([
+			page.waitForEvent('download'),
+			page.getByRole('button', { name: `Save ${gif}` }).click()
+		]);
+		expect(savedGif.suggestedFilename()).toMatch(/^bbf-360[ _]\(0\.0s-2\.0s\)\.gif$/);
+		const savedFrames = decodeGif(
+			new Uint8Array(readFileSync((await probe('wait for the saved GIF', () => savedGif.path()))!))
+		);
+		expect(savedFrames).toMatchObject({ width: 480, height: 270 });
+		expect(savedFrames.frames).toHaveLength(24);
+
+		// Kept while moving about the app, stored nowhere, and gone with a reload.
+		const nav = page.getByRole('navigation', { name: 'Main' });
+		await nav.getByRole('link', { name: 'Download', exact: true }).click();
+		await expect(page.getByLabel('Video URL')).toBeVisible();
+		await nav.getByRole('link', { name: 'Library', exact: true }).click();
+		await expect(cards).toHaveCount(1);
+		if (await hasOpfs(page)) expect(await opfsFiles(page)).toEqual([]);
+		await page.reload();
+		await expect(page.getByRole('button', { name: 'Animate a video file…' })).toBeVisible();
+		await expect(shelf).toHaveCount(0);
+
+		expect(await violations()).toEqual([]);
+		expect(consoleCsp).toEqual([]);
+	});
+});
 
 test.describe('the frame timeline', () => {
 	// Pictures drawn at twice the size: the low-bitrate encode left some of the clip's frames

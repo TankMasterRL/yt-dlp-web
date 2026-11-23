@@ -131,10 +131,11 @@ export class AnimationEditor {
 	 * Makes the animation from frames out of `source`. A GIF's palette comes
 	 * from frames spread across the range, taken first; those are kept and sent
 	 * again in their turn, so no frame is taken twice. One frame is in the
-	 * encoder while the next is taken.
+	 * encoder while the next is taken. Resolves with what it made, or null when
+	 * it made nothing (cancelled, failed — `error` says why — or not begun).
 	 */
-	async render(source: FrameSource): Promise<void> {
-		if (this.rendering || !this.media || this.tooLong) return;
+	async render(source: FrameSource): Promise<Animation | null> {
+		if (this.rendering || !this.media || this.tooLong) return null;
 		const range = { ...this.range };
 		const crop = { ...this.crop };
 		const size = { ...this.size };
@@ -175,7 +176,7 @@ export class AnimationEditor {
 			}
 			await pending;
 			const blob = await encoder.finish();
-			this.result = {
+			const made: Animation = {
 				format,
 				blob,
 				...size,
@@ -183,8 +184,11 @@ export class AnimationEditor {
 				duration: times.length / fps,
 				range
 			};
+			this.result = made;
+			return made;
 		} catch (e) {
 			if ((e as Error).name !== 'AbortError') this.error = (e as Error).message;
+			return null;
 		} finally {
 			encoder.close();
 			if (this.#encoder === encoder) {

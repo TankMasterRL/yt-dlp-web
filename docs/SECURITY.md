@@ -174,4 +174,5 @@ is read by the page and the download worker only, opened in a media element from
 and never sent anywhere — no request is made for it, not even to the relay (e2e checks that the
 relay sees none). Its thumbnail is a still the browser draws itself. A video opened with _Animate
 a video file…_ is not even copied: it is read from disk for as long as the animation maker is
-open.
+open. The animations made are not stored either: the page holds them in memory, to view again,
+until it is reloaded or closed.

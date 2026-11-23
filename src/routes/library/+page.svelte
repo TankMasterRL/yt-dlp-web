@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
+	import { getGallery } from '#lib/animate/gallery.svelte.ts';
 	import { appEndpoints } from '#lib/endpoints.ts';
 	import { formatBytes, formatDuration } from '#lib/formats.ts';
 	import type { LibraryItem } from '#lib/storage/db.ts';
@@ -14,12 +15,15 @@
 	} from '#lib/storage/present.ts';
 	import { quotaReporter, storageRoom } from '#lib/storage/quota.ts';
 	import AnimationDialog from '#lib/ui/AnimationDialog.svelte';
+	import Animations from '#lib/ui/Animations.svelte';
 	import PlayerDialog from '#lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '#lib/ui/save.ts';
 	import Spinner from '#lib/ui/Spinner.svelte';
 
 	const endpoints = appEndpoints();
 	const library = getLibrary(endpoints);
+	/** The animations made in this tab: in memory only, gone with a reload. */
+	const gallery = getGallery();
 	/** What the file pickers offer: what browsers commonly play, and Matroska, which some systems type as nothing. */
 	const MEDIA_FILES = 'video/*,audio/*,.mkv,.mka,.webm,.opus';
 	const VIDEO_FILES = 'video/*,.mkv,.webm';
@@ -229,6 +233,8 @@
 	{#each importErrors as error, i (i)}<p class="error" role="alert">{error}</p>{/each}
 </section>
 
+<Animations {gallery} />
+
 {#if library.items.length}
 	<div class="controls">
 		<label>
@@ -364,7 +370,7 @@
 	</ul>
 {:else if library.loaded}
 	<p class="empty">
-		Nothing here yet.
+		No videos here yet.
 		{#if endpoints.relay}<a href={resolve('/')}>Download something</a> or import videos you already have,
 			and they will appear here.{:else}Import videos you already have, and they will appear here.{/if}
 	</p>
@@ -380,7 +386,12 @@
 {/if}
 
 {#if animating}
-	<AnimationDialog file={animating.file} item={animating.item} onclose={() => (animating = null)} />
+	<AnimationDialog
+		file={animating.file}
+		item={animating.item}
+		onmade={(made, source) => gallery.add(made, source)}
+		onclose={() => (animating = null)}
+	/>
 {/if}
 
 <style>

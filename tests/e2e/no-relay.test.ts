@@ -40,7 +40,9 @@ test.describe('a build without a relay', () => {
 
 		await notice.getByRole('link', { name: 'import videos you already have' }).click();
 		await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
-		await expect(page.getByText('Nothing here yet. Import videos you already have')).toBeVisible();
+		await expect(
+			page.getByText('No videos here yet. Import videos you already have')
+		).toBeVisible();
 
 		const own = new URL(page.url()).origin;
 		const elsewhere = requests.filter((url) => /^https?:/.test(url) && !url.startsWith(own));
