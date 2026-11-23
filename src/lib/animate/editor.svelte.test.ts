@@ -142,7 +142,7 @@ describe('AnimationEditor', () => {
 			Array.from({ length: 30 }, (_, i) => i / 10)
 		);
 		expect(editor.result).toMatchObject({ format: 'apng', frames: 30, duration: 3 });
-		expect(editor.result!.blob.type).toBe('image/apng');
+		expect(editor.result!.blob.type).toBe('image/png');
 	});
 
 	it('makes a lossless JPEG XL of the range, frame for frame', async () => {

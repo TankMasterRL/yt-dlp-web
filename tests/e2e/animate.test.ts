@@ -202,6 +202,15 @@ async function chooseRangeAndCrop(page: Page, dialog: Locator) {
 	return { width, height };
 }
 
+/** Each format's file extension: what the saved file must keep, whatever the browser. */
+const EXTENSIONS: Record<string, string> = {
+	GIF: 'gif',
+	APNG: 'png',
+	WebP: 'webp',
+	AVIF: 'avif',
+	'JPEG XL': 'jxl'
+};
+
 /** Creates the animation in the chosen format and saves it; returns the saved bytes. */
 async function createAndSave(page: Page, dialog: Locator, label: string): Promise<Uint8Array> {
 	await dialog.getByRole('button', { name: `Create ${label}` }).click();
@@ -223,7 +232,9 @@ async function createAndSave(page: Page, dialog: Locator, label: string): Promis
 		page.waitForEvent('download'),
 		result.getByRole('button', { name: `Save ${label}` }).click()
 	]);
+	// Firefox renames a download to suit its type: an APNG typed image/apng came out .apng.
 	expect(download.suggestedFilename()).toMatch(/^Big Buck Fixture.* \(0\.5s-1\.5s\) \[0\]\.\w+$/);
+	expect(download.suggestedFilename().split('.').at(-1)).toBe(EXTENSIONS[label]);
 	return new Uint8Array(
 		readFileSync((await probe(`wait for the saved ${label} to download`, () => download.path()))!)
 	);

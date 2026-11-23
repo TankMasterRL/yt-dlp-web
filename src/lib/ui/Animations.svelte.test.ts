@@ -39,7 +39,7 @@ function setup(count = 3) {
 		gallery.add(
 			animation({
 				format: 'apng',
-				blob: new Blob([new Uint8Array(3000)], { type: 'image/apng' }),
+				blob: new Blob([new Uint8Array(3000)], { type: 'image/png' }),
 				width: 240,
 				height: 135,
 				range: { start: 0.5, end: 1.5 },

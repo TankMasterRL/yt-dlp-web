@@ -34,7 +34,7 @@ describe('AnimationGallery', () => {
 		const gif = gallery.add(animation(), { title: 'Big Buck Fixture', formatId: '0' });
 		tick(5_000);
 		const apng = gallery.add(
-			animation({ format: 'apng', blob: new Blob([new Uint8Array(300)], { type: 'image/apng' }) }),
+			animation({ format: 'apng', blob: new Blob([new Uint8Array(300)], { type: 'image/png' }) }),
 			{ title: 'bbf-360' }
 		);
 		expect(gallery.items).toEqual([apng, gif]);

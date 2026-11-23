@@ -38,7 +38,8 @@ export const FORMATS: Record<AnimationFormat, FormatSpec> = {
 	},
 	apng: {
 		label: 'APNG',
-		mime: 'image/apng',
+		// An APNG is a PNG, named .png: typed image/apng, Firefox saved it as .apng.
+		mime: 'image/png',
 		ext: 'png',
 		lossy: false,
 		palette: false,
