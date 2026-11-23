@@ -175,4 +175,6 @@ and never sent anywhere — no request is made for it, not even to the relay (e2
 relay sees none). Its thumbnail is a still the browser draws itself. A video opened with _Animate
 a video file…_ is not even copied: it is read from disk for as long as the animation maker is
 open. The animations made are not stored either: the page holds them in memory, to view again,
-until it is reloaded or closed.
+until it is reloaded or closed. Animated images opened with _View animated images…_ are neither
+copied nor kept: the page reads their headers, shows each file from a `blob:` URL while the viewer
+is open, and lets them go when it closes (e2e checks that no request leaves the page).
