@@ -27,7 +27,8 @@
 		type TimeRange
 	} from '#lib/animate/clip.ts';
 	import { workerEncoder } from '#lib/animate/client.ts';
-	import { AnimationEditor } from '#lib/animate/editor.svelte.ts';
+	import { AnimationEditor, type Animation } from '#lib/animate/editor.svelte.ts';
+	import type { AnimationSource } from '#lib/animate/gallery.svelte.ts';
 	import { FORMATS, FORMAT_ORDER, QUALITY_CHOICES } from '#lib/animate/formats.ts';
 	import {
 		learnGrid,
@@ -49,11 +50,13 @@
 		/** The video: from the library's private storage, or a file opened straight from disk. */
 		file: File;
 		/** What the saved file is named after; a file from disk has no format. */
-		item: { title: string; formatId?: string };
+		item: AnimationSource;
+		/** Each animation made, to keep for viewing again once the dialog is closed. */
+		onmade?: (animation: Animation, source: AnimationSource) => void;
 		onclose: () => void;
 	}
 
-	let { file, item, onclose }: Props = $props();
+	let { file, item, onmade, onclose }: Props = $props();
 
 	const editor = new AnimationEditor(() => workerEncoder());
 	let dialog: HTMLDialogElement;
@@ -215,7 +218,8 @@
 
 	async function create() {
 		stopPreview();
-		await editor.render(videoFrames(video));
+		const made = await editor.render(videoFrames(video));
+		if (made) onmade?.(made, item);
 	}
 
 	async function save() {
@@ -391,6 +395,12 @@
 					s · {formatBytes(result.blob.size)}
 				</p>
 				<button type="button" class="primary" onclick={save}>Save {label}</button>
+				{#if onmade}
+					<p class="kept">
+						Also kept under Animations on the library page until this tab is reloaded or closed:
+						save it to keep it.
+					</p>
+				{/if}
 			</section>
 		{/if}
 	</div>
@@ -666,6 +676,10 @@
 		margin: 0;
 		color: var(--muted);
 		font-size: 0.9rem;
+	}
+
+	.result .kept {
+		font-size: 0.85rem;
 	}
 
 	/* Phones: the whole screen, the picture and the Create button always in reach. */

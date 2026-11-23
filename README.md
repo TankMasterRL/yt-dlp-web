@@ -60,6 +60,10 @@ Cloudflare Worker: holds no secrets, stores nothing, parses nothing
 
   The page only offers what the browser in front of it can make.
 
+  Every animation made is kept under _Animations_ on the library page, playing, to view again
+  full size, step through, save or remove. They are held in the tab's memory only, never stored:
+  reloading or closing the tab lets them go, so save the ones you want.
+
 Read on in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Security

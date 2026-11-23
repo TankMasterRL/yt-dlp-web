@@ -142,7 +142,7 @@ describe('AnimationEditor', () => {
 			Array.from({ length: 30 }, (_, i) => i / 10)
 		);
 		expect(editor.result).toMatchObject({ format: 'apng', frames: 30, duration: 3 });
-		expect(editor.result!.blob.type).toBe('image/apng');
+		expect(editor.result!.blob.type).toBe('image/png');
 	});
 
 	it('makes a lossless JPEG XL of the range, frame for frame', async () => {
@@ -173,6 +173,22 @@ describe('AnimationEditor', () => {
 		expect(editor.result?.frames).toBe(5);
 	});
 
+	it('resolves with the animation it made, whatever is made after it', async () => {
+		const { editor } = setup();
+		editor.range = { start: 0, end: 0.5 };
+		editor.fps = 10;
+		const made = await editor.render(fakeSource());
+		expect(made).toMatchObject({ format: 'gif', frames: 5, range: { start: 0, end: 0.5 } });
+		expect(made!.blob).toBe(editor.result!.blob);
+
+		editor.format = 'apng';
+		const next = await editor.render(fakeSource());
+		expect(next).toMatchObject({ format: 'apng', frames: 5 });
+		// The first is as it was made: another render replaces the editor's result, not it.
+		expect(made).toMatchObject({ format: 'gif', frames: 5 });
+		expect(made!.blob.type).toBe('image/gif');
+	});
+
 	it('can be cancelled: no result, no error, the encoder stopped', async () => {
 		const { editor, encoders } = setup();
 		let release!: () => void;
@@ -180,16 +196,17 @@ describe('AnimationEditor', () => {
 		const rendering = editor.render(fakeSource({ hold }));
 		editor.cancel();
 		release();
-		await rendering;
+		expect(await rendering).toBeNull();
 		expect(editor).toMatchObject({ result: null, error: null, rendering: false });
 		expect(encoders[0].close).toHaveBeenCalled();
 	});
 
 	it('says why when it fails', async () => {
 		const { editor } = setup();
-		await editor.render(
+		const made = await editor.render(
 			fakeSource({ fail: new Error("This browser can't play this video's format") })
 		);
+		expect(made).toBeNull();
 		expect(editor.error).toBe("This browser can't play this video's format");
 		expect(editor.result).toBeNull();
 	});
@@ -201,7 +218,7 @@ describe('AnimationEditor', () => {
 		editor.fps = 30;
 		expect(editor.frameCount).toBeGreaterThan(MAX_FRAMES);
 		expect(editor.tooLong).toBe(true);
-		await editor.render(fakeSource());
+		expect(await editor.render(fakeSource())).toBeNull();
 		expect(encoders).toHaveLength(0);
 	});
 

@@ -13,11 +13,19 @@ describe('animation formats', () => {
 			[
 				['gif', 'GIF', 'image/gif', 'gif'],
 				['webp', 'WebP', 'image/webp', 'webp'],
-				['apng', 'APNG', 'image/apng', 'png'],
+				['apng', 'APNG', 'image/png', 'png'],
 				['avif', 'AVIF', 'image/avif', 'avif'],
 				['jxl', 'JPEG XL', 'image/jxl', 'jxl']
 			]
 		);
+	});
+
+	it('types each file as its extension says, so a browser saving it keeps its name', () => {
+		// Firefox renames a download whose type has other extensions: an APNG typed
+		// image/apng and named .png was saved as .apng.
+		for (const format of FORMAT_ORDER) {
+			expect(FORMATS[format].mime, format).toBe(`image/${FORMATS[format].ext}`);
+		}
 	});
 
 	it('says which take a quality and which need a palette', () => {

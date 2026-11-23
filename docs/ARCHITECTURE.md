@@ -46,6 +46,7 @@ page (Svelte 5)                     src/routes/, src/lib/ui/
      ├─ imported files, opened first in a <video>                     src/lib/storage/{inspect,imported}.ts
      ├─ remux worker (on demand)    FFmpeg → OPFS                     src/workers/remux.worker.ts
      └─ animations (library page)   <video> frames → animate worker   src/lib/animate/, src/workers/animate.worker.ts
+          kept in memory to view    AnimationGallery, gone on reload   src/lib/animate/gallery.svelte.ts
 
 Worker                              worker/src/
  ├─ /relay   relay.ts + policy.ts (allowlist, SSRF guard)
@@ -275,6 +276,16 @@ to the one before. Frame rates stop at 30, because browsers slow GIF delays unde
 The result is shown from a `blob:` URL and saved like a download; it is not kept in the library.
 Where the browser cannot show the format (most cannot show JPEG XL yet), the dialog says so
 instead of showing a broken image.
+
+Each animation made is also handed to the page's `AnimationGallery`
+(`src/lib/animate/gallery.svelte.ts`, one per tab like the library), which holds the file and what
+it was made of in memory, and nowhere else: no IndexedDB, no OPFS, so a reload or a closed tab lets
+every one go. The library
+page lists them under _Animations_, newest first, each card the animation itself, playing
+(`Animations.svelte`; a still label instead where `prefers-reduced-motion` asks), and opens one
+full size in a viewer that steps through them (`AnimationViewer.svelte`). Every image shows its
+file through a `blob:` URL of its own, revoked as the image goes (`object-url.ts`): an animation
+removed, or the page left, holds no bytes alive.
 
 ## Security layers
 

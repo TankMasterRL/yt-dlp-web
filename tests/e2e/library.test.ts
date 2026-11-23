@@ -78,7 +78,7 @@ test.describe('download → library → play → export → delete', () => {
 		await page.getByRole('button', { name: /^Delete Big Buck Fixture/ }).click();
 		await page.getByRole('button', { name: /^Confirm deleting/ }).click();
 		await expect(page.getByRole('article')).toHaveCount(0);
-		await expect(page.getByText('Nothing here yet.')).toBeVisible();
+		await expect(page.getByText('No videos here yet.')).toBeVisible();
 		expect(await opfsFiles(page)).toEqual([]);
 		await expect(storage).toContainText('0 B in your library');
 
