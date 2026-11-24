@@ -1,39 +1,33 @@
 <script lang="ts">
-	import { formatClipTime } from '#lib/animate/clip.ts';
-	import { FORMATS } from '#lib/animate/formats.ts';
-	import {
-		madeFileName,
-		type AnimationGallery,
-		type MadeAnimation
-	} from '#lib/animate/gallery.svelte.ts';
-	import { formatBytes } from '#lib/formats.ts';
+	import type { ViewedImage } from '#lib/animate/viewed.ts';
 	import AnimatedImage from './AnimatedImage.svelte';
 	import { saveFile } from './save';
 
 	interface Props {
-		/** The animations made in this tab, to step through. */
-		gallery: AnimationGallery;
+		/** What to step through, in order: the animations made in this tab, or files opened from the device. */
+		items: readonly ViewedImage[];
 		/** The one on show. */
 		id: string;
+		/** Lets one go (an animation made here); without it, there is nothing to remove. */
+		onremove?: (id: string) => void;
 		/** How a file reaches the person (the browser's save dialog, or a download). */
 		save?: (file: Blob, name: string) => Promise<void>;
 		onclose: () => void;
 	}
 
-	let { gallery, id = $bindable(), save = saveFile, onclose }: Props = $props();
+	let { items, id = $bindable(), onremove, save = saveFile, onclose }: Props = $props();
 	let dialog: HTMLDialogElement;
-	const index = $derived(gallery.items.findIndex((a) => a.id === id));
-	const animation = $derived<MadeAnimation | undefined>(gallery.items[index]);
+	const index = $derived(items.findIndex((a) => a.id === id));
+	const image = $derived<ViewedImage | undefined>(items[index]);
 
 	/** Shows the one `by` places along, round from the last to the first. */
 	function step(by: number) {
-		const { items } = gallery;
 		id = items[(index + by + items.length) % items.length].id;
 	}
 
 	function keydown(event: KeyboardEvent) {
 		if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-		if (gallery.items.length < 2) return;
+		if (items.length < 2) return;
 		if (event.key === 'ArrowLeft') step(-1);
 		else if (event.key === 'ArrowRight') step(1);
 		else return;
@@ -42,10 +36,11 @@
 
 	/** Lets the one on show go, and shows the one now in its place; with none left, closes. */
 	function remove() {
+		if (!onremove) return;
 		const at = index;
-		gallery.remove(id);
-		const { items } = gallery;
-		if (items.length) id = items[Math.min(at, items.length - 1)].id;
+		const rest = items.filter((a) => a.id !== id);
+		onremove(id);
+		if (rest.length) id = rest[Math.min(at, rest.length - 1)].id;
 		else dialog.close();
 	}
 </script>
@@ -60,13 +55,12 @@
 	aria-labelledby="viewer-title"
 	aria-describedby="viewer-what"
 >
-	{#if animation}
-		{@const label = FORMATS[animation.format].label}
-		{@const stretch = `${formatClipTime(animation.range.start)} to ${formatClipTime(animation.range.end)}`}
+	{#if image}
+		{@const fileName = image.fileName}
 		<header>
 			<div>
-				<h2 id="viewer-title">{animation.source.title}</h2>
-				<p id="viewer-what" class="what">{label} of {stretch} of the video</p>
+				<h2 id="viewer-title">{image.title}</h2>
+				<p id="viewer-what" class="what">{image.what}</p>
 			</div>
 			<button type="button" onclick={() => dialog.close()} aria-label="Close the animation viewer">
 				Close
@@ -75,46 +69,36 @@
 
 		<!-- One height for every animation, so stepping through them never moves the buttons. -->
 		<div class="stage">
-			<AnimatedImage
-				blob={animation.blob}
-				alt="The animated {label}: {stretch} of {animation.source.title}"
-				width={animation.width}
-				height={animation.height}
-			>
+			<AnimatedImage blob={image.blob} alt={image.alt} width={image.width} height={image.height}>
 				{#snippet unshowable()}
-					<p class="note" data-unshowable>
-						This browser can't show {label} images. The file is fine: save it, and open it with a browser
-						or viewer that can.
-					</p>
+					<p class="note" data-unshowable>{image.unshowable}</p>
 				{/snippet}
 			</AnimatedImage>
 		</div>
-		<p class="details">
-			{animation.width} × {animation.height} px · {animation.frames} frames · {animation.duration.toFixed(
-				1
-			)} s · {formatBytes(animation.blob.size)}
-		</p>
+		<p class="details">{image.details}</p>
 
 		<footer>
-			{#if gallery.items.length > 1}
+			{#if items.length > 1}
 				<div class="steps">
 					<button type="button" onclick={() => step(-1)} aria-label="Previous animation">
 						Previous
 					</button>
-					<span aria-live="polite">{index + 1} of {gallery.items.length}</span>
+					<span aria-live="polite">{index + 1} of {items.length}</span>
 					<button type="button" onclick={() => step(1)} aria-label="Next animation">Next</button>
 				</div>
 			{/if}
-			<div class="actions">
-				<button type="button" onclick={remove}>Remove</button>
-				<button
-					type="button"
-					class="primary"
-					onclick={() => save(animation.blob, madeFileName(animation))}
-				>
-					Save {label}
-				</button>
-			</div>
+			{#if onremove || fileName}
+				<div class="actions">
+					{#if onremove}
+						<button type="button" onclick={remove}>Remove</button>
+					{/if}
+					{#if fileName}
+						<button type="button" class="primary" onclick={() => save(image.blob, fileName)}>
+							Save {image.label}
+						</button>
+					{/if}
+				</div>
+			{/if}
 		</footer>
 	{/if}
 </dialog>

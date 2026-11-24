@@ -4,9 +4,11 @@
  * go; saving one is how to keep it. One per page (`getGallery`), like the
  * library: moving between the app's pages keeps them.
  */
+import { formatBytes } from '#lib/formats.ts';
 import { animationFileName, formatClipTime } from './clip';
 import type { Animation } from './editor.svelte';
 import { FORMATS } from './formats';
+import { frameCount, seconds, type ViewedImage } from './viewed';
 
 /** The video an animation was made of: what its file is named after. */
 export interface AnimationSource {
@@ -78,4 +80,29 @@ export function madeFileName(animation: MadeAnimation): string {
 export function describeAnimation({ format, source, range }: MadeAnimation): string {
 	const stretch = `${formatClipTime(range.start)} to ${formatClipTime(range.end)}`;
 	return `${FORMATS[format].label} of ${source.title}, ${stretch}`;
+}
+
+/** What the viewer shows of a kept animation: the video and the stretch it was made of. */
+export function viewMade(animation: MadeAnimation): ViewedImage {
+	const { id, blob, width, height, source, range, frames, duration } = animation;
+	const label = FORMATS[animation.format].label;
+	const stretch = `${formatClipTime(range.start)} to ${formatClipTime(range.end)}`;
+	return {
+		id,
+		blob,
+		width,
+		height,
+		title: source.title,
+		what: `${label} of ${stretch} of the video`,
+		alt: `The animated ${label}: ${stretch} of ${source.title}`,
+		details: [
+			`${width} × ${height} px`,
+			frameCount(frames),
+			seconds(duration),
+			formatBytes(blob.size)
+		].join(' · '),
+		label,
+		unshowable: `This browser can't show ${label} images. The file is fine: save it, and open it with a browser or viewer that can.`,
+		fileName: madeFileName(animation)
+	};
 }

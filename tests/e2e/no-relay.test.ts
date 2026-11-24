@@ -6,7 +6,7 @@ import { NO_RELAY } from '../../src/lib/relay/protocol';
 import { expect, test } from './fixtures';
 import { NO_OPFS } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
-import { animateFromDisk, importJourney, withoutSavePicker } from './device';
+import { animateFromDisk, importJourney, viewFromDisk, withoutSavePicker } from './device';
 
 test.describe('a build without a relay', () => {
 	test.skip(
@@ -65,5 +65,9 @@ test.describe('a build without a relay', () => {
 	test('animates a video straight from disk', async ({ page }) => {
 		await withoutSavePicker(page);
 		await animateFromDisk(page);
+	});
+
+	test('views animated images straight from disk', async ({ page }) => {
+		await viewFromDisk(page);
 	});
 });

@@ -47,6 +47,7 @@ page (Svelte 5)                     src/routes/, src/lib/ui/
      ├─ remux worker (on demand)    FFmpeg → OPFS                     src/workers/remux.worker.ts
      └─ animations (library page)   <video> frames → animate worker   src/lib/animate/, src/workers/animate.worker.ts
           kept in memory to view    AnimationGallery, gone on reload   src/lib/animate/gallery.svelte.ts
+          files viewed from disk    headers read, never stored         src/lib/animate/{read,opened}.ts
 
 Worker                              worker/src/
  ├─ /relay   relay.ts + policy.ts (allowlist, SSRF guard)
@@ -286,6 +287,25 @@ page lists them under _Animations_, newest first, each card the animation itself
 full size in a viewer that steps through them (`AnimationViewer.svelte`). Every image shows its
 file through a `blob:` URL of its own, revoked as the image goes (`object-url.ts`): an animation
 removed, or the page left, holds no bytes alive.
+
+The same viewer shows animated images the person already has, without making them: _View animated
+images…_ picks GIF, PNG, WebP, AVIF or JPEG XL files, and the viewer steps through them straight
+from disk, offering neither Save nor Remove (they are the person's own files). Each file's first
+bytes say its format (`imageFormat`), so a video picked by mistake is refused before the rest is
+read; then its headers say its size, frames and length (`readImage` in `src/lib/animate/read.ts`),
+read without decoding anything:
+
+| Format  | What is read                                                                                                                                                                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GIF     | each image descriptor whose data is all there, with its graphic control extension's delay — under 2 cs counted as the 10 cs browsers show                                                                                                             |
+| PNG     | an APNG when `acTL` comes before the image data: each `fcTL`'s delay                                                                                                                                                                                  |
+| WebP    | the `VP8X` canvas and its animation flag, each `ANMF`'s duration; a simple file's `VP8`/`VP8L` size                                                                                                                                                   |
+| AVIF    | the primary item's `ispe` (as `clap` crops and `irot` turns it); an image sequence's `pict` track: `mdhd` timescale and `stts`                                                                                                                        |
+| JPEG XL | the size and image headers (as oriented), then every frame header and table of contents, walked to the codestream's last byte — a walk that ends anywhere else counts nothing, nor one past an ICC profile, a preview or a permuted table of contents |
+
+What cannot be read is not guessed: a JPEG XL whose frames could not be walked is shown as
+animated, uncounted. The viewer itself only lays out what each image says of itself
+(`ViewedImage`, from `viewMade` or `viewOpened`).
 
 ## Security layers
 

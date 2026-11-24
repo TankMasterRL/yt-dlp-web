@@ -64,6 +64,11 @@ Cloudflare Worker: holds no secrets, stores nothing, parses nothing
   full size, step through, save or remove. They are held in the tab's memory only, never stored:
   reloading or closing the tab lets them go, so save the ones you want.
 
+- **Animated images you already have.** _View animated images…_ in the library opens GIF, PNG
+  (APNG), WebP, AVIF and JPEG XL files straight from disk in the same viewer, without making them:
+  each at its own size, with its frame count and length read from the file's own headers, a step
+  apart. Nothing is copied or kept, and the files go nowhere.
+
 Read on in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Security

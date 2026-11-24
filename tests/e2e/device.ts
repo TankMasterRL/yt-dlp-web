@@ -1,13 +1,19 @@
 /**
- * Journeys with videos already on this device: imported into the library, or
- * opened straight from disk in the animation maker. Shared by the import spec
- * (a build with a relay) and the no-relay spec (VITE_RELAY_URL=none), where
- * they are all the app does.
+ * Journeys with files already on this device: videos imported into the
+ * library or opened straight from disk in the animation maker, and animated
+ * images opened in the viewer. Shared by the import spec (a build with a
+ * relay) and the no-relay spec (VITE_RELAY_URL=none), where they are all the
+ * app does.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FileChooser, Locator, Page } from '@playwright/test';
+import { ApngEncoder } from '../../src/lib/animate/apng';
+import { GifEncoder } from '../../src/lib/animate/gif';
+import { JxlEncoder } from '../../src/lib/animate/jxl';
+import { buildPalette } from '../../src/lib/animate/quantize';
+import { formatBytes } from '../../src/lib/formats';
 import { decodeGif, type DecodedGif } from '../helpers/gif';
 import { expect } from './fixtures';
 import { hasOpfs, opfsFiles, probe } from './app';
@@ -170,4 +176,110 @@ export async function animateFromDisk(page: Page): Promise<void> {
 	expectWholeClip(await makeGif(page, GIF_NAME));
 	await expect(page.getByRole('article')).toHaveCount(0);
 	if (await hasOpfs(page)) expect(await opfsFiles(page)).toEqual([]);
+}
+
+/** `count` width × height frames, each one color, each another. */
+function colorFrames(width: number, height: number, count: number): Uint8ClampedArray[] {
+	return Array.from({ length: count }, (_, i) => {
+		const frame = new Uint8ClampedArray(width * height * 4);
+		for (let p = 0; p < frame.length; p += 4) frame.set([(i * 50) % 256, 255 - i * 40, 90, 255], p);
+		return frame;
+	});
+}
+
+/**
+ * Animated images as files on the device, made here by the app's own encoders
+ * (so nothing is made in the browser): a GIF of 6 frames of 10 cs, an APNG of
+ * 4 at 8 fps and a JPEG XL of 3 at 5 fps.
+ */
+async function imageFiles(): Promise<{ name: string; mimeType: string; buffer: Buffer }[]> {
+	const gifFrames = colorFrames(160, 90, 6);
+	const gif = new GifEncoder({ width: 160, height: 90, palette: buildPalette(gifFrames) });
+	for (const frame of gifFrames) gif.addFrame(frame, 10);
+	const apng = new ApngEncoder({ width: 120, height: 80, fps: 8 });
+	for (const frame of colorFrames(120, 80, 4)) await apng.addFrame(frame);
+	const jxl = new JxlEncoder({ width: 64, height: 48, fps: 5 });
+	for (const frame of colorFrames(64, 48, 3)) jxl.addFrame(frame);
+	return [
+		{ name: 'moving.gif', mimeType: 'image/gif', buffer: Buffer.concat(gif.finish()) },
+		{ name: 'moving.png', mimeType: 'image/png', buffer: Buffer.concat(await apng.finish()) },
+		{ name: 'moving.jxl', mimeType: 'image/jxl', buffer: Buffer.concat(jxl.finish()) }
+	];
+}
+
+/**
+ * Opens animated images straight from disk in the viewer, without making
+ * them: each is shown at its own size with what its headers say, the viewer
+ * steps through them, and a video picked by mistake is refused. Nothing is
+ * stored or sent anywhere — so it works without private file storage, and
+ * without a relay.
+ */
+export async function viewFromDisk(page: Page): Promise<void> {
+	const requests: string[] = [];
+	page.on('request', (request) => requests.push(request.url()));
+	await page.goto('/library/');
+	const own = new URL(page.url()).origin;
+	const files = await imageFiles();
+	await pickFiles(page, 'View animated images…', [
+		...files,
+		{ name: 'bbf-360.webm', mimeType: 'video/webm', buffer: FIXTURE }
+	]);
+	await expect(page.getByRole('alert')).toHaveText(
+		"bbf-360.webm can't be viewed: it isn't a GIF, PNG, WebP, AVIF or JPEG XL image"
+	);
+
+	const viewer = page.getByRole('dialog');
+	const image = viewer.getByRole('img');
+	/** The width the browser decoded the image at; 'unshowable' if it can't decode it. */
+	const shown = () =>
+		viewer.evaluate((dialog) => {
+			if (dialog.querySelector('[data-unshowable]')) return 'unshowable';
+			const img = dialog.querySelector('img');
+			return img?.complete ? img.naturalWidth : 0;
+		});
+	const bytes = (i: number) => formatBytes(files[i].buffer.length);
+
+	// The first, named after its file, at its own size: the person's own file, so neither
+	// Save nor Remove.
+	await expect(viewer).toHaveAccessibleName('moving.gif');
+	await expect(viewer).toContainText('GIF from this device');
+	await expect(viewer).toContainText(`160 × 90 px · 6 frames · 0.6 s · ${bytes(0)}`);
+	await expect(viewer).toContainText('1 of 3');
+	await expect(image).toHaveAccessibleName('The animated GIF moving.gif');
+	await expect.poll(shown).toBe(160);
+	expect((await image.boundingBox())!.width).toBeCloseTo(160, 0);
+	await expect(viewer.getByRole('button', { name: /^Save/ })).toHaveCount(0);
+	await expect(viewer.getByRole('button', { name: 'Remove' })).toHaveCount(0);
+
+	await viewer.getByRole('button', { name: 'Next animation' }).click();
+	await expect(viewer).toHaveAccessibleName('moving.png');
+	await expect(viewer).toContainText('APNG from this device');
+	await expect(viewer).toContainText(`120 × 80 px · 4 frames · 0.5 s · ${bytes(1)}`);
+	await expect.poll(shown).toBe(120);
+
+	// JPEG XL: shown where the browser can (Chromium behind its flag), said so where it can't.
+	await page.keyboard.press('ArrowRight');
+	await expect(viewer).toHaveAccessibleName('moving.jxl');
+	await expect(viewer).toContainText(`64 × 48 px · 3 frames · 0.6 s · ${bytes(2)}`);
+	await expect.poll(shown).not.toBe(0);
+	if ((await shown()) === 'unshowable') {
+		await expect(viewer.locator('[data-unshowable]')).toHaveText(
+			"This browser can't show this JPEG XL image. Open it with a browser or viewer that can."
+		);
+	} else {
+		expect(await shown()).toBe(64);
+	}
+
+	// Round from the last to the first.
+	await page.keyboard.press('ArrowRight');
+	await expect(viewer).toHaveAccessibleName('moving.gif');
+	await viewer.getByRole('button', { name: 'Close the animation viewer' }).click();
+	await expect(viewer).toHaveCount(0);
+
+	// Looked at, and kept nowhere: not in the library, not among the animations made here,
+	// not in private storage, and sent to no one.
+	await expect(page.getByRole('article')).toHaveCount(0);
+	await expect(page.getByRole('region', { name: 'Animations' })).toHaveCount(0);
+	if (await hasOpfs(page)) expect(await opfsFiles(page)).toEqual([]);
+	expect(requests.filter((url) => /^https?:/.test(url) && !url.startsWith(own))).toEqual([]);
 }

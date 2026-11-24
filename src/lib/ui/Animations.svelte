@@ -5,6 +5,7 @@
 	import {
 		describeAnimation,
 		madeFileName,
+		viewMade,
 		type AnimationGallery,
 		type MadeAnimation
 	} from '#lib/animate/gallery.svelte.ts';
@@ -25,6 +26,8 @@
 	let viewing = $state<string | null>(null);
 	let list = $state<HTMLUListElement>();
 	const count = $derived(gallery.items.length);
+	/** What the viewer shows of each, in the same order. */
+	const viewed = $derived(gallery.items.map(viewMade));
 
 	/** Lets one go, and keeps focus in the list: on the one now in its place, or the one before. */
 	function remove(animation: MadeAnimation) {
@@ -103,8 +106,9 @@
 
 {#if viewing}
 	<AnimationViewer
-		{gallery}
+		items={viewed}
 		bind:id={() => viewing!, (id) => (viewing = id)}
+		onremove={(id) => gallery.remove(id)}
 		{save}
 		onclose={() => (viewing = null)}
 	/>

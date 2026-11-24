@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { Animation } from './editor.svelte';
-import { AnimationGallery, describeAnimation, getGallery, madeFileName } from './gallery.svelte';
+import {
+	AnimationGallery,
+	describeAnimation,
+	getGallery,
+	madeFileName,
+	viewMade
+} from './gallery.svelte';
 
 function animation(overrides: Partial<Animation> = {}): Animation {
 	return {
@@ -105,5 +111,35 @@ describe('describeAnimation', () => {
 			formatId: '0'
 		});
 		expect(describeAnimation(kept)).toBe('JPEG XL of Big Buck Fixture, 0:00.5 to 1:01.5');
+	});
+});
+
+describe('viewMade', () => {
+	it('shows a kept animation by the video and the stretch it was made of, to save under its name', () => {
+		const { gallery } = setup();
+		const kept = gallery.add(animation({ format: 'apng', range: { start: 0.5, end: 1.5 } }), {
+			title: 'Big Buck Fixture',
+			formatId: '0'
+		});
+		expect(viewMade(kept)).toEqual({
+			id: kept.id,
+			blob: kept.blob,
+			width: 480,
+			height: 270,
+			title: 'Big Buck Fixture',
+			what: 'APNG of 0:00.5 to 0:01.5 of the video',
+			alt: 'The animated APNG: 0:00.5 to 0:01.5 of Big Buck Fixture',
+			details: '480 × 270 px · 24 frames · 2.0 s · 100 B',
+			label: 'APNG',
+			unshowable:
+				"This browser can't show APNG images. The file is fine: save it, and open it with a browser or viewer that can.",
+			fileName: 'Big Buck Fixture (0.5s-1.5s) [0].png'
+		});
+	});
+
+	it('counts a lone frame as one', () => {
+		const { gallery } = setup();
+		const kept = gallery.add(animation({ frames: 1, duration: 0.1 }), { title: 'bbf-360' });
+		expect(viewMade(kept).details).toBe('480 × 270 px · 1 frame · 0.1 s · 100 B');
 	});
 });

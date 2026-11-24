@@ -1,7 +1,13 @@
 import { expect, test } from './fixtures';
 import { NO_OPFS, hasOpfs, opfsFiles } from './app';
 import { recordConsoleCsp, recordCspViolations } from './csp';
-import { animateFromDisk, importJourney, pickFiles, withoutSavePicker } from './device';
+import {
+	animateFromDisk,
+	importJourney,
+	pickFiles,
+	viewFromDisk,
+	withoutSavePicker
+} from './device';
 
 test.describe('videos already on this device', () => {
 	test.describe.configure({ timeout: 180_000 });
@@ -34,6 +40,16 @@ test.describe('videos already on this device', () => {
 		expect(await violations()).toEqual([]);
 	});
 
+	test('animated images opened straight from disk are viewed without being made, and nothing is kept', async ({
+		page
+	}) => {
+		const violations = await recordCspViolations(page);
+		const consoleCsp = recordConsoleCsp(page);
+		await viewFromDisk(page);
+		expect(await violations()).toEqual([]);
+		expect(consoleCsp).toEqual([]);
+	});
+
 	test('a file the browser cannot play is refused, and nothing is stored', async ({ page }) => {
 		await page.goto('/library/');
 		test.skip(!(await hasOpfs(page)), NO_OPFS);
@@ -47,7 +63,7 @@ test.describe('videos already on this device', () => {
 		expect(await opfsFiles(page)).toEqual([]);
 	});
 
-	test('without private file storage, nothing can be imported — but a file can still be animated', async ({
+	test('without private file storage, nothing can be imported — but a file can still be animated, and an image viewed', async ({
 		page
 	}) => {
 		// As in a private window that refuses OPFS (or an engine without it).
@@ -62,6 +78,8 @@ test.describe('videos already on this device', () => {
 		await expect(page.locator('[data-storage="unavailable"]')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Import videos…' })).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'Animate a video file…' })).toBeEnabled();
+		await expect(page.getByRole('button', { name: 'View animated images…' })).toBeEnabled();
 		await animateFromDisk(page);
+		await viewFromDisk(page);
 	});
 });

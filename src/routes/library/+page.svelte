@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { getGallery } from '#lib/animate/gallery.svelte.ts';
+	import { IMAGE_FILES, openImage, viewOpened } from '#lib/animate/opened.ts';
+	import type { ViewedImage } from '#lib/animate/viewed.ts';
 	import { appEndpoints } from '#lib/endpoints.ts';
 	import { formatBytes, formatDuration } from '#lib/formats.ts';
 	import type { LibraryItem } from '#lib/storage/db.ts';
@@ -15,6 +17,7 @@
 	} from '#lib/storage/present.ts';
 	import { quotaReporter, storageRoom } from '#lib/storage/quota.ts';
 	import AnimationDialog from '#lib/ui/AnimationDialog.svelte';
+	import AnimationViewer from '#lib/ui/AnimationViewer.svelte';
 	import Animations from '#lib/ui/Animations.svelte';
 	import PlayerDialog from '#lib/ui/PlayerDialog.svelte';
 	import { saveFile } from '#lib/ui/save.ts';
@@ -44,6 +47,14 @@
 	let opening = $state<{ name: string; index: number; count: number } | null>(null);
 	let importInput: HTMLInputElement;
 	let animateInput: HTMLInputElement;
+	let viewInput: HTMLInputElement;
+	/** Animated images opened from the device to look at, read from disk and never stored. */
+	let viewing = $state.raw<ViewedImage[] | null>(null);
+	/** The one of them on show. */
+	let viewingId = $state('');
+	/** The picked image being read, before the viewer opens. */
+	let reading = $state<string | null>(null);
+	let viewErrors = $state<string[]>([]);
 	let confirmDelete = $state<string | null>(null);
 	let notice = $state<string | null>(null);
 	const thumbnails = new Map<string, string>();
@@ -139,6 +150,26 @@
 		if (file) animating = { item: { title: importedTitle(file.name) }, file };
 	}
 
+	/** Open the picked images in the viewer, straight from disk: each is read for what it is, nothing is copied. */
+	async function viewPicked() {
+		const files = [...(viewInput.files ?? [])];
+		viewInput.value = '';
+		viewErrors = [];
+		const opened: ViewedImage[] = [];
+		for (const file of files) {
+			reading = file.name;
+			try {
+				opened.push(viewOpened(await openImage(file)));
+			} catch (e) {
+				viewErrors = [...viewErrors, `${file.name} can't be viewed: ${(e as Error).message}`];
+			}
+		}
+		reading = null;
+		if (!opened.length) return;
+		viewingId = opened[0].id;
+		viewing = opened;
+	}
+
 	async function save(item: LibraryItem) {
 		await saveFile(await library.file(item.id), exportFileName(item));
 	}
@@ -184,7 +215,7 @@
 	{#if notice}<p class="notice" role="status">{notice}</p>{/if}
 </section>
 
-<section class="device" aria-label="Videos on this device">
+<section class="device" aria-label="Files on this device">
 	<div class="device-actions">
 		<button
 			type="button"
@@ -195,10 +226,14 @@
 			Import videos…
 		</button>
 		<button type="button" onclick={() => animateInput.click()}>Animate a video file…</button>
+		<button type="button" onclick={() => viewInput.click()} disabled={reading !== null}>
+			View animated images…
+		</button>
 	</div>
 	<p class="hint">
 		Import videos you already have: they're copied into this browser's private storage, to play and
-		to make animated images from. Or animate one straight from your disk, without copying it.
+		to make animated images from. Or animate one straight from your disk, without copying it — and
+		view animated images you already have the same way.
 	</p>
 	<input
 		bind:this={importInput}
@@ -217,10 +252,20 @@
 		aria-label="Video to animate"
 		onchange={animatePicked}
 	/>
+	<input
+		bind:this={viewInput}
+		type="file"
+		accept={IMAGE_FILES}
+		multiple
+		hidden
+		aria-label="Animated images to view"
+		onchange={viewPicked}
+	/>
 	{#if canStore === false}
 		<p class="note" data-storage="unavailable">
 			This browser gives the page no private file storage here — private windows often don't — so
-			nothing can be imported. A video can still be animated straight from your disk.
+			nothing can be imported. A video can still be animated, and an animated image viewed, straight
+			from your disk.
 		</p>
 	{/if}
 	{#if opening}
@@ -231,6 +276,11 @@
 		</p>
 	{/if}
 	{#each importErrors as error, i (i)}<p class="error" role="alert">{error}</p>{/each}
+	{#if reading}
+		<!-- Seen only if reading takes a moment: most images are read at once. -->
+		<p class="hint later" role="status"><Spinner />Reading {reading}…</p>
+	{/if}
+	{#each viewErrors as error, i (i)}<p class="error" role="alert">{error}</p>{/each}
 </section>
 
 <Animations {gallery} />
@@ -385,6 +435,10 @@
 	/>
 {/if}
 
+{#if viewing}
+	<AnimationViewer items={viewing} bind:id={viewingId} onclose={() => (viewing = null)} />
+{/if}
+
 {#if animating}
 	<AnimationDialog
 		file={animating.file}
@@ -459,6 +513,10 @@
 
 	.device .note {
 		color: var(--warn);
+	}
+
+	.device .later {
+		animation: after-a-moment 0s 0.3s backwards;
 	}
 
 	.notice {
